@@ -2,147 +2,265 @@ import 'package:flutter/material.dart';
 
 import 'login.dart';
 
-class WelcomeScreen extends StatelessWidget {
+class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
 
-  static const Color _navy = Color(0xFF001832);
-  static const Color _green = Color(0xFF008A3D);
-  static const Color _text = Color(0xFF4A4F5A);
+  static const Color _navy = Color(0xFF0F2B4D);
+  static const Color _green = Color(0xFF5BC66B);
+  static const Color _accent = Color(0xFFF3FFF4);
+  static const Color _text = Color(0xFF4A5563);
+
+  @override
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
+}
+
+class _WelcomeScreenState extends State<WelcomeScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.035),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFD),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 74),
-                      Image.asset(
-                        'lib/img/logOnly.png',
-                        width: 116,
-                        fit: BoxFit.contain,
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFF7FFF8),
+              Colors.white,
+              Color(0xFFECFFF0),
+            ],
+            stops: [0, 0.52, 1],
+          ),
+        ),
+        child: Stack(
+          children: [
+            const _SoftGlow(alignment: Alignment.topRight),
+            const _SoftGlow(alignment: Alignment.bottomLeft),
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
                       ),
-                      const SizedBox(height: 64),
-                      const Text(
-                        'Every Path Made Clear.\nEvery Destination\nReached.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _navy,
-                          fontSize: 22,
-                          height: 1.28,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      const Text(
-                        "Finding accessible routes shouldn't\n"
-                        'be a challenge. NavAble provides\n'
-                        'real-time, peer-verified navigation for\n'
-                        'wheelchair users and those with\n'
-                        'limited mobility.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _text,
-                          fontSize: 15,
-                          height: 1.55,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                      const Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          _FeatureChip(
-                            icon: Icons.accessible,
-                            label: 'Ramp Access',
-                          ),
-                          _FeatureChip(
-                            icon: Icons.elevator,
-                            label: 'Elevators',
-                          ),
-                          _FeatureChip(
-                            icon: Icons.map_outlined,
-                            label: 'Smart Routing',
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 154),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: FilledButton(
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const LoginScreen(),
-                              ),
-                            );
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _navy,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 44, 24, 24),
+                        child: FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: SlideTransition(
+                            position: _slideAnimation,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.asset(
+                                  'lib/img/logOnly.png',
+                                  width: 152,
+                                  fit: BoxFit.contain,
+                                ),
+                                const SizedBox(height: 48),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 330,
+                                  ),
+                                  child: Text(
+                                    'Every Path Made Clear.\nEvery Destination Reached.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: WelcomeScreen._navy,
+                                      fontSize: 29,
+                                      height: 1.18,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 322,
+                                  ),
+                                  child: Text(
+                                    "Finding accessible routes shouldn't be a challenge. NavAble provides real-time, peer-verified navigation for wheelchair users and those with limited mobility.",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: WelcomeScreen._text,
+                                      fontSize: 15,
+                                      height: 1.68,
+                                      fontWeight: FontWeight.w400,
+                                      letterSpacing: 0,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 32),
+                                const _FeatureChips(),
+                                const SizedBox(height: 34),
+                                _PrimaryCtaButton(
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      PageRouteBuilder<void>(
+                                        transitionDuration: const Duration(
+                                          milliseconds: 360,
+                                        ),
+                                        reverseTransitionDuration:
+                                            const Duration(milliseconds: 260),
+                                        pageBuilder: (
+                                          context,
+                                          animation,
+                                          secondaryAnimation,
+                                        ) =>
+                                            const LoginScreen(),
+                                        transitionsBuilder: (
+                                          context,
+                                          animation,
+                                          secondaryAnimation,
+                                          child,
+                                        ) {
+                                              final curved = CurvedAnimation(
+                                                parent: animation,
+                                                curve: Curves.easeOutCubic,
+                                              );
+
+                                              return FadeTransition(
+                                                opacity: curved,
+                                                child: SlideTransition(
+                                                  position: Tween<Offset>(
+                                                    begin: const Offset(
+                                                      0.04,
+                                                      0,
+                                                    ),
+                                                    end: Offset.zero,
+                                                  ).animate(curved),
+                                                  child: child,
+                                                ),
+                                              );
+                                            },
+                                      ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 24),
+                                Text.rich(
+                                  TextSpan(
+                                    text: 'By continuing, you agree to our ',
+                                    children: [
+                                      TextSpan(
+                                        text: 'Terms of Service',
+                                        style: TextStyle(
+                                          color: WelcomeScreen._navy,
+                                          decoration: TextDecoration.underline,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Color(0xFF3F4650),
+                                    fontSize: 12,
+                                    height: 1.45,
+                                    fontWeight: FontWeight.w500,
+                                    letterSpacing: 0,
+                                  ),
+                                ),
+                              ],
                             ),
-                            textStyle: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0,
-                            ),
-                          ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('Get Started'),
-                              SizedBox(width: 14),
-                              Icon(Icons.arrow_forward, size: 22),
-                            ],
                           ),
                         ),
                       ),
-                      const SizedBox(height: 26),
-                      const Text.rich(
-                        TextSpan(
-                          text: 'By continuing, you agree to our ',
-                          children: [
-                            TextSpan(
-                              text: 'Terms of Service',
-                              style: TextStyle(
-                                color: _navy,
-                                decoration: TextDecoration.underline,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Color(0xFF3F4650),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _SoftGlow extends StatelessWidget {
+  const _SoftGlow({required this.alignment});
+
+  final Alignment alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: alignment,
+      child: Transform.translate(
+        offset: alignment == Alignment.topRight
+            ? const Offset(70, -60)
+            : const Offset(-80, 84),
+        child: Container(
+          width: 190,
+          height: 190,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [
+                WelcomeScreen._green.withValues(alpha: 0.09),
+                WelcomeScreen._green.withValues(alpha: 0),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureChips extends StatelessWidget {
+  const _FeatureChips();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(
+          child: _FeatureChip(icon: Icons.accessible, label: 'Ramp Access'),
+        ),
+        const SizedBox(width: 10),
+        const Expanded(
+          child: _FeatureChip(icon: Icons.elevator, label: 'Elevators'),
+        ),
+        const SizedBox(width: 10),
+        const Expanded(
+          child: _FeatureChip(icon: Icons.map_outlined, label: 'Smart Routing'),
+        ),
+      ],
     );
   }
 }
@@ -156,28 +274,112 @@ class _FeatureChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFEDEFF2),
-        border: Border.all(color: const Color(0xFFD8DBE0)),
-        borderRadius: BorderRadius.circular(22),
+        color: WelcomeScreen._accent.withValues(alpha: 0.82),
+        border: Border.all(color: const Color(0xFFDDE5DF)),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: WelcomeScreen._navy.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: WelcomeScreen._green, size: 16),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF111722),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0,
+          Icon(icon, color: WelcomeScreen._green, size: 20),
+          const SizedBox(width: 7),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  color: WelcomeScreen._navy,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
+                ),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PrimaryCtaButton extends StatefulWidget {
+  const _PrimaryCtaButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  State<_PrimaryCtaButton> createState() => _PrimaryCtaButtonState();
+}
+
+class _PrimaryCtaButtonState extends State<_PrimaryCtaButton> {
+  bool _isPressed = false;
+  bool _isHovered = false;
+
+  void _setPressed(bool value) {
+    if (_isPressed == value) {
+      return;
+    }
+
+    setState(() => _isPressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTapDown: (_) => _setPressed(true),
+        onTapCancel: () => _setPressed(false),
+        onTapUp: (_) => _setPressed(false),
+        child: AnimatedScale(
+          scale: _isPressed ? 0.975 : (_isHovered ? 1.01 : 1),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: SizedBox(
+            width: double.infinity,
+            height: 58,
+            child: FilledButton(
+              onPressed: widget.onPressed,
+              style: FilledButton.styleFrom(
+                backgroundColor: WelcomeScreen._navy,
+                foregroundColor: Colors.white,
+                elevation: _isHovered ? 10 : 8,
+                shadowColor: WelcomeScreen._navy.withValues(alpha: 0.22),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Get Started'),
+                  SizedBox(width: 12),
+                  Icon(Icons.arrow_forward_rounded, size: 26),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
