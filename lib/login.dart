@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'auth_service.dart';
 import 'forgot.dart';
+import 'home.dart';
 import 'register.dart';
 import 'splash.dart';
 
@@ -20,6 +22,8 @@ class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   bool _rememberDevice = false;
   bool _obscurePassword = true;
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
@@ -44,8 +48,34 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _login() {
+    final result = AuthService.login(
+      email: _emailController.text,
+      password: _passwordController.text,
+    );
+
+    if (!result.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'Login failed.')),
+      );
+      return;
+    }
+
+    Navigator.of(context).pushReplacement(
+      _fadeRoute(const SplashScreen(nextScreen: HomeScreen())),
+    );
+  }
+
+  void _showProviderPlaceholder(String provider) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$provider sign in needs platform setup.')),
+    );
   }
 
   @override
@@ -106,10 +136,11 @@ class _LoginScreenState extends State<LoginScreen>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const _LoginField(
+                                  _LoginField(
                                     label: 'Email Address',
                                     icon: Icons.email_outlined,
                                     hintText: 'june@example.com',
+                                    controller: _emailController,
                                     keyboardType: TextInputType.emailAddress,
                                   ),
                                   const SizedBox(height: 20),
@@ -117,6 +148,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     label: 'Password',
                                     icon: Icons.lock_outline,
                                     hintText: '********',
+                                    controller: _passwordController,
                                     obscureText: _obscurePassword,
                                     labelAction: TextButton(
                                       onPressed: () {
@@ -197,11 +229,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   const SizedBox(height: 28),
                                   _PrimaryButton(
                                     label: 'Login',
-                                    onPressed: () {
-                                      Navigator.of(context).pushReplacement(
-                                        _fadeRoute(const SplashScreen()),
-                                      );
-                                    },
+                                    onPressed: _login,
                                   ),
                                 ],
                               ),
@@ -209,12 +237,22 @@ class _LoginScreenState extends State<LoginScreen>
                             const SizedBox(height: 24),
                             const _DividerLabel(),
                             const SizedBox(height: 20),
-                            const Row(
+                            Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                _RoundIconButton(icon: Icons.fingerprint),
-                                SizedBox(width: 18),
-                                _RoundIconButton(icon: Icons.face),
+                                _RoundIconButton(
+                                  icon: Icons.fingerprint,
+                                  onPressed: () => _showProviderPlaceholder(
+                                    'Fingerprint',
+                                  ),
+                                ),
+                                const SizedBox(width: 18),
+                                _RoundIconButton(
+                                  icon: Icons.face,
+                                  onPressed: () => _showProviderPlaceholder(
+                                    'Face ID',
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 28),
@@ -370,6 +408,7 @@ class _LoginField extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.hintText,
+    this.controller,
     this.keyboardType,
     this.obscureText = false,
     this.suffixIcon,
@@ -379,6 +418,7 @@ class _LoginField extends StatelessWidget {
   final String label;
   final IconData icon;
   final String hintText;
+  final TextEditingController? controller;
   final TextInputType? keyboardType;
   final bool obscureText;
   final Widget? suffixIcon;
@@ -409,6 +449,7 @@ class _LoginField extends StatelessWidget {
         SizedBox(
           height: 56,
           child: TextField(
+            controller: controller,
             keyboardType: keyboardType,
             obscureText: obscureText,
             decoration: InputDecoration(
@@ -531,14 +572,15 @@ class _DividerLabel extends StatelessWidget {
 }
 
 class _RoundIconButton extends StatelessWidget {
-  const _RoundIconButton({required this.icon});
+  const _RoundIconButton({required this.icon, required this.onPressed});
 
   final IconData icon;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     return OutlinedButton(
-      onPressed: () {},
+      onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         fixedSize: const Size(58, 58),
         shape: const CircleBorder(),

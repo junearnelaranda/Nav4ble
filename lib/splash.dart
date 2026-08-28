@@ -12,6 +12,7 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  bool _hasContinued = false;
 
   static const Color _navy = Color(0xFF0F2B4D);
   static const Color _green = Color(0xFF5BC66B);
@@ -24,6 +25,12 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat();
+
+    Future<void>.delayed(const Duration(milliseconds: 1800), () {
+      if (mounted) {
+        _continueIfPossible();
+      }
+    });
   }
 
   @override
@@ -33,10 +40,11 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _continueIfPossible() {
-    if (widget.nextScreen == null) {
+    if (widget.nextScreen == null || _hasContinued) {
       return;
     }
 
+    _hasContinued = true;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder<void>(
         transitionDuration: const Duration(milliseconds: 320),

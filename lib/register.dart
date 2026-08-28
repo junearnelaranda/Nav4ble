@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'auth_service.dart';
+import 'home.dart';
 import 'login.dart';
+import 'splash.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -12,6 +15,11 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen>
     with SingleTickerProviderStateMixin {
   bool _obscurePassword = true;
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
@@ -36,8 +44,41 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   @override
   void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _register() {
+    final result = AuthService.register(
+      fullName: _nameController.text,
+      email: _emailController.text,
+      password: _passwordController.text,
+      confirmPassword: _confirmPasswordController.text,
+    );
+
+    if (!result.isSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message ?? 'Sign up failed.')),
+      );
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      _fadeRoute(const SplashScreen(nextScreen: HomeScreen())),
+      (route) => false,
+    );
+  }
+
+  void _showGooglePlaceholder() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Google sign up needs Firebase or Google Sign-In setup.'),
+      ),
+    );
   }
 
   @override
@@ -120,16 +161,18 @@ class _RegisterScreenState extends State<RegisterScreen>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const _RegisterField(
+                                  _RegisterField(
                                     label: 'Full Name',
                                     icon: Icons.person_outline,
                                     hintText: 'Enter your full name',
+                                    controller: _nameController,
                                   ),
                                   const SizedBox(height: 20),
-                                  const _RegisterField(
+                                  _RegisterField(
                                     label: 'Email Address',
                                     icon: Icons.email_outlined,
                                     hintText: 'email@example.com',
+                                    controller: _emailController,
                                     keyboardType: TextInputType.emailAddress,
                                   ),
                                   const SizedBox(height: 20),
@@ -137,6 +180,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                                     label: 'Create Password',
                                     icon: Icons.lock_outline,
                                     hintText: 'At least 8 characters',
+                                    controller: _passwordController,
                                     obscureText: _obscurePassword,
                                     suffixIcon: IconButton(
                                       onPressed: () {
@@ -155,16 +199,17 @@ class _RegisterScreenState extends State<RegisterScreen>
                                     ),
                                   ),
                                   const SizedBox(height: 20),
-                                  const _RegisterField(
+                                  _RegisterField(
                                     label: 'Confirm Password',
                                     icon: Icons.lock_reset,
                                     hintText: 'Repeat your password',
+                                    controller: _confirmPasswordController,
                                     obscureText: true,
                                   ),
                                   const SizedBox(height: 28),
                                   _PrimaryButton(
                                     label: 'Sign Up',
-                                    onPressed: () {},
+                                    onPressed: _register,
                                   ),
                                   const SizedBox(height: 18),
                                   const Center(
@@ -214,7 +259,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                               width: double.infinity,
                               height: 54,
                               child: OutlinedButton(
-                                onPressed: () {},
+                                onPressed: _showGooglePlaceholder,
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: kNavAbleNavy,
                                   backgroundColor:
@@ -422,6 +467,7 @@ class _RegisterField extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.hintText,
+    this.controller,
     this.keyboardType,
     this.obscureText = false,
     this.suffixIcon,
@@ -430,6 +476,7 @@ class _RegisterField extends StatelessWidget {
   final String label;
   final IconData icon;
   final String hintText;
+  final TextEditingController? controller;
   final TextInputType? keyboardType;
   final bool obscureText;
   final Widget? suffixIcon;
@@ -452,6 +499,7 @@ class _RegisterField extends StatelessWidget {
         SizedBox(
           height: 56,
           child: TextField(
+            controller: controller,
             keyboardType: keyboardType,
             obscureText: obscureText,
             decoration: InputDecoration(

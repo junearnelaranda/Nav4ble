@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'auth_service.dart';
+
 const Color _navAbleNavy = Color(0xFF0F2B4D);
 const Color _navAbleGreen = Color(0xFF5BC66B);
 const Color _navAbleAccent = Color(0xFFF3FFF4);
@@ -14,6 +16,7 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     with SingleTickerProviderStateMixin {
+  final TextEditingController _emailController = TextEditingController();
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
@@ -38,8 +41,23 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
 
   @override
   void dispose() {
+    _emailController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _sendResetLink() {
+    final message = AuthService.resetPassword(_emailController.text);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  void _showSupportMessage(String destination) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$destination is ready to connect to your site.')),
+    );
   }
 
   @override
@@ -101,13 +119,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const _EmailResetField(),
+                                  _EmailResetField(
+                                    controller: _emailController,
+                                  ),
                                   const SizedBox(height: 14),
                                   const _SecurityNotice(),
                                   const SizedBox(height: 28),
                                   _PrimaryButton(
                                     label: 'Send Reset Link',
-                                    onPressed: () {},
+                                    onPressed: _sendResetLink,
                                   ),
                                 ],
                               ),
@@ -123,16 +143,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                               ),
                             ),
                             const SizedBox(height: 14),
-                            const _SupportAction(
+                            _SupportAction(
                               icon: Icons.support_agent_rounded,
                               label: 'Contact Accessibility Support',
                               color: _navAbleGreen,
+                              onPressed: () => _showSupportMessage(
+                                'Accessibility support',
+                              ),
                             ),
                             const SizedBox(height: 10),
-                            const _SupportAction(
+                            _SupportAction(
                               icon: Icons.help_outline_rounded,
                               label: 'Visit Help Center',
                               color: _navAbleNavy,
+                              onPressed: () => _showSupportMessage(
+                                'Help Center',
+                              ),
                             ),
                             const SizedBox(height: 26),
                             const _HelpNotice(),
@@ -286,7 +312,9 @@ class _ResetIcon extends StatelessWidget {
 }
 
 class _EmailResetField extends StatelessWidget {
-  const _EmailResetField();
+  const _EmailResetField({required this.controller});
+
+  final TextEditingController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -306,6 +334,7 @@ class _EmailResetField extends StatelessWidget {
         SizedBox(
           height: 56,
           child: TextField(
+            controller: controller,
             keyboardType: TextInputType.emailAddress,
             decoration: InputDecoration(
               prefixIcon:
@@ -435,16 +464,18 @@ class _SupportAction extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.color,
+    required this.onPressed,
   });
 
   final IconData icon;
   final String label;
   final Color color;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     return TextButton.icon(
-      onPressed: () {},
+      onPressed: onPressed,
       style: TextButton.styleFrom(
         foregroundColor: color,
         minimumSize: const Size(44, 44),
