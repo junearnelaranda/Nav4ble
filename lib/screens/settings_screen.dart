@@ -6,14 +6,12 @@ class _SettingsScreen extends StatefulWidget {
     required this.onVoiceGuidanceChanged,
     required this.submissions,
     required this.onOpenInfo,
-    required this.onSignOut,
   });
 
   final bool voiceGuidance;
   final ValueChanged<bool> onVoiceGuidanceChanged;
   final List<AccessibilitySubmission> submissions;
   final void Function(String title, String body) onOpenInfo;
-  final VoidCallback onSignOut;
 
   @override
   State<_SettingsScreen> createState() => _SettingsScreenState();
@@ -118,33 +116,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
             _MySubmissionsScreen(submissions: widget.submissions),
       ),
     );
-  }
-
-  Future<void> _confirmSignOut() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Are you sure you want to sign out?'),
-        content: const Text(
-          'You will return to the welcome screen. Your local demo data will remain available until the app closes.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFB42318),
-            ),
-            child: const Text('Sign Out'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) widget.onSignOut();
   }
 
   @override
@@ -322,21 +293,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                     ),
                   ),
                 ],
-              ),
-            ),
-            const SizedBox(height: NavAbleSpacing.lg),
-            SizedBox(
-              height: NavAbleSize.control,
-              child: FilledButton.icon(
-                onPressed: _confirmSignOut,
-                style: FilledButton.styleFrom(
-                  alignment: Alignment.centerLeft,
-                  backgroundColor: const Color(0xFFFEE4E2),
-                  foregroundColor: const Color(0xFFB42318),
-                  elevation: 0,
-                ),
-                icon: const Icon(Icons.logout_rounded, size: 19),
-                label: const Text('Sign Out'),
               ),
             ),
           ],

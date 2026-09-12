@@ -56,7 +56,6 @@ class _ProfilePage extends StatelessWidget {
           onVoiceGuidanceChanged: onVoiceGuidanceChanged,
           submissions: submissions,
           onOpenInfo: onOpenInfo,
-          onSignOut: onSignOut,
         ),
       ),
     );
