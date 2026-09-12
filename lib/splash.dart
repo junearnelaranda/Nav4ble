@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key, this.nextScreen});
+import 'navable_design.dart';
 
-  final Widget? nextScreen;
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key, required this.nextScreen});
+
+  final Widget nextScreen;
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -12,11 +16,12 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  Timer? _continueTimer;
   bool _hasContinued = false;
 
-  static const Color _navy = Color(0xFF0F2B4D);
-  static const Color _green = Color(0xFF5BC66B);
-  static const Color _text = Color(0xFF4A5563);
+  static const Color _navy = NavAblePalette.navy;
+  static const Color _green = NavAblePalette.green;
+  static const Color _text = NavAblePalette.text;
 
   @override
   void initState() {
@@ -26,7 +31,7 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 1800),
     )..repeat();
 
-    Future<void>.delayed(const Duration(milliseconds: 1800), () {
+    _continueTimer = Timer(const Duration(milliseconds: 1800), () {
       if (mounted) {
         _continueIfPossible();
       }
@@ -35,30 +40,37 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
+    _continueTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   void _continueIfPossible() {
-    if (widget.nextScreen == null || _hasContinued) {
+    if (_hasContinued) {
       return;
     }
 
     _hasContinued = true;
-    Navigator.of(context).pushReplacement(
-      PageRouteBuilder<void>(
-        transitionDuration: const Duration(milliseconds: 320),
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            widget.nextScreen!,
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          );
-          return FadeTransition(opacity: curved, child: child);
-        },
-      ),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(context, rootNavigator: true).pushReplacement(
+        PageRouteBuilder<void>(
+          transitionDuration: const Duration(milliseconds: 320),
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              widget.nextScreen,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            );
+            return FadeTransition(opacity: curved, child: child);
+          },
+        ),
+      );
+    });
   }
 
   @override
@@ -172,7 +184,8 @@ class _SplashScreenState extends State<SplashScreen>
                                           builder: (context, child) {
                                             return FractionallySizedBox(
                                               alignment: Alignment.centerLeft,
-                                              widthFactor: 0.26 +
+                                              widthFactor:
+                                                  0.26 +
                                                   (_controller.value * 0.74),
                                               child: child,
                                             );

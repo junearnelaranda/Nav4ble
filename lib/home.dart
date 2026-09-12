@@ -1,8 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'auth_service.dart';
 import 'login.dart';
+import 'navable_design.dart';
 import 'welcome.dart';
+
+part 'screens/home_tab.dart';
+part 'screens/explore_tab.dart';
+part 'screens/reports_tab.dart';
+part 'screens/alerts_tab.dart';
+part 'screens/profile_tab.dart';
+part 'screens/settings_screen.dart';
+part 'screens/submissions_screen.dart';
+
+enum _ProfilePhotoAction { camera, gallery, remove }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,12 +25,18 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _destinationController = TextEditingController();
+  final TextEditingController _exploreSearchController = TextEditingController(
+    text: 'Cafe near Ayala Center Cebu',
+  );
   int _selectedIndex = 0;
   bool _avoidStairs = true;
-  bool _prioritizeElevators = true;
-  bool _showVerifiedOnly = true;
+  bool _prioritizeElevators = false;
+  final bool _showVerifiedOnly = true;
+  bool _accessibleEntrance = false;
+  bool _accessibleToilet = false;
+  bool _tactilePaving = false;
+  bool _audioAssistance = false;
   bool _voiceGuidance = true;
-  bool _highContrastRoutes = false;
   String? _routeStatus;
 
   final List<SavedPlace> _savedPlaces = [
@@ -55,9 +73,97 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   ];
 
+  final List<AccessibilitySubmission> _submissions = const [
+    AccessibilitySubmission(
+      title: 'Central Station Elevator',
+      submittedOn: 'Oct 24, 2023',
+      status: SubmissionStatus.pending,
+      statusDetail: 'Reviewing Details',
+      icon: Icons.accessible_forward_rounded,
+    ),
+    AccessibilitySubmission(
+      title: 'Public Library Ramp',
+      submittedOn: 'Oct 22, 2023',
+      status: SubmissionStatus.pending,
+      statusDetail: 'Wait time: ~2 days',
+      icon: Icons.ramp_right_rounded,
+    ),
+    AccessibilitySubmission(
+      title: 'Main Street Ramp',
+      submittedOn: 'Oct 18, 2023',
+      status: SubmissionStatus.approved,
+      statusDetail: 'Verified by the community',
+      icon: Icons.accessible_forward_rounded,
+    ),
+    AccessibilitySubmission(
+      title: 'City Hall Entrance',
+      submittedOn: 'Oct 15, 2023',
+      status: SubmissionStatus.approved,
+      statusDetail: 'Accessible entrance confirmed',
+      icon: Icons.door_front_door_outlined,
+    ),
+    AccessibilitySubmission(
+      title: 'Ayala Center Elevator',
+      submittedOn: 'Oct 12, 2023',
+      status: SubmissionStatus.approved,
+      statusDetail: 'Elevator access confirmed',
+      icon: Icons.elevator_outlined,
+    ),
+    AccessibilitySubmission(
+      title: 'Cebu IT Park Curb Cut',
+      submittedOn: 'Oct 10, 2023',
+      status: SubmissionStatus.approved,
+      statusDetail: 'Step-free route verified',
+      icon: Icons.route_outlined,
+    ),
+    AccessibilitySubmission(
+      title: 'Bus Terminal Accessible Toilet',
+      submittedOn: 'Oct 8, 2023',
+      status: SubmissionStatus.approved,
+      statusDetail: 'Facility details confirmed',
+      icon: Icons.wc_rounded,
+    ),
+    AccessibilitySubmission(
+      title: 'Museum Step-Free Entrance',
+      submittedOn: 'Oct 5, 2023',
+      status: SubmissionStatus.approved,
+      statusDetail: 'Entrance information verified',
+      icon: Icons.meeting_room_outlined,
+    ),
+    AccessibilitySubmission(
+      title: 'Fuente Osmeña Crossing',
+      submittedOn: 'Oct 2, 2023',
+      status: SubmissionStatus.approved,
+      statusDetail: 'Crossing route confirmed',
+      icon: Icons.signpost_outlined,
+    ),
+    AccessibilitySubmission(
+      title: 'Pier 1 Tactile Paving',
+      submittedOn: 'Sep 29, 2023',
+      status: SubmissionStatus.approved,
+      statusDetail: 'Tactile path verified',
+      icon: Icons.blind_outlined,
+    ),
+    AccessibilitySubmission(
+      title: 'Oak Library Entrance',
+      submittedOn: 'Sep 26, 2023',
+      status: SubmissionStatus.rejected,
+      statusDetail: 'A clearer photo is required',
+      icon: Icons.photo_camera_outlined,
+    ),
+    AccessibilitySubmission(
+      title: 'Downtown Audio Beacon',
+      submittedOn: 'Sep 24, 2023',
+      status: SubmissionStatus.rejected,
+      statusDetail: 'Location details were incomplete',
+      icon: Icons.hearing_rounded,
+    ),
+  ];
+
   @override
   void dispose() {
     _destinationController.dispose();
+    _exploreSearchController.dispose();
     super.dispose();
   }
 
@@ -188,81 +294,281 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openSavedPlaces() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => Scaffold(
+          backgroundColor: const Color(0xFFF7FAF8),
+          appBar: AppBar(
+            title: const Text('Saved Places'),
+            backgroundColor: Colors.white,
+            foregroundColor: kNavAbleNavy,
+            elevation: 0,
+          ),
+          body: _SavedPage(
+            savedPlaces: _savedPlaces,
+            onUsePlace: (place) {
+              Navigator.of(context).pop();
+              _useSavedPlace(place);
+            },
+            onDeletePlace: _deleteSavedPlace,
+            onOpenPlace: _openSavedPlaceDetails,
+          ),
+        ),
+      ),
+    );
+  }
+
   void _editProfile() {
     final user = AuthService.currentUser;
     final nameController = TextEditingController(text: user?.fullName ?? '');
     final emailController = TextEditingController(text: user?.email ?? '');
+    var selectedPhoto = user?.profileImageBytes;
+
+    String initialsFor(String name) {
+      final words = name
+          .trim()
+          .split(RegExp(r'\s+'))
+          .where((word) => word.isNotEmpty)
+          .toList();
+      if (words.isEmpty) return 'NA';
+      if (words.length == 1) {
+        return words.first
+            .substring(0, words.first.length.clamp(1, 2))
+            .toUpperCase();
+      }
+      return '${words.first[0]}${words.last[0]}'.toUpperCase();
+    }
 
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: NavAblePalette.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(NavAbleRadius.card),
+        ),
       ),
-      builder: (context) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            20,
-            20,
-            MediaQuery.viewInsetsOf(context).bottom + 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Edit Profile',
-                style: TextStyle(
-                  color: kNavAbleNavy,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _InputField(
-                controller: nameController,
-                hintText: 'Full name',
-                icon: Icons.person_outline,
-              ),
-              const SizedBox(height: 12),
-              _InputField(
-                controller: emailController,
-                hintText: 'Email address',
-                icon: Icons.email_outlined,
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    final result = AuthService.updateProfile(
-                      fullName: nameController.text,
-                      email: emailController.text,
-                    );
-                    if (!result.isSuccess) {
-                      _showMessage(result.message ?? 'Profile update failed.');
-                      return;
-                    }
-
-                    setState(() {});
-                    Navigator.of(context).pop();
-                    _showMessage('Profile updated locally.');
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: kNavAbleNavy,
-                    foregroundColor: Colors.white,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            Future<void> changePhoto() async {
+              final action = await showModalBottomSheet<_ProfilePhotoAction>(
+                context: sheetContext,
+                useSafeArea: true,
+                showDragHandle: true,
+                backgroundColor: NavAblePalette.surface,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(NavAbleRadius.card),
                   ),
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Save Profile'),
                 ),
+                builder: (context) => Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    NavAbleSpacing.md,
+                    NavAbleSpacing.xs,
+                    NavAbleSpacing.md,
+                    NavAbleSpacing.lg,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Profile Photo',
+                        style: TextStyle(
+                          color: kNavAbleNavy,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: NavAbleSpacing.sm),
+                      ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Color(0xFFDDF9E3),
+                          child: Icon(
+                            Icons.photo_camera_outlined,
+                            color: NavAblePalette.greenDark,
+                          ),
+                        ),
+                        title: const Text('Take a Photo'),
+                        subtitle: const Text('Use your device camera'),
+                        onTap: () => Navigator.of(
+                          context,
+                        ).pop(_ProfilePhotoAction.camera),
+                      ),
+                      ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Color(0xFFDDEEFF),
+                          child: Icon(
+                            Icons.photo_library_outlined,
+                            color: kNavAbleNavy,
+                          ),
+                        ),
+                        title: const Text('Choose from Gallery'),
+                        subtitle: const Text('Select an existing image'),
+                        onTap: () => Navigator.of(
+                          context,
+                        ).pop(_ProfilePhotoAction.gallery),
+                      ),
+                      if (selectedPhoto != null)
+                        ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFFEE4E2),
+                            child: Icon(
+                              Icons.delete_outline_rounded,
+                              color: Color(0xFFB42318),
+                            ),
+                          ),
+                          title: const Text('Remove Current Photo'),
+                          onTap: () => Navigator.of(
+                            context,
+                          ).pop(_ProfilePhotoAction.remove),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+
+              if (action == null || !sheetContext.mounted) return;
+              if (action == _ProfilePhotoAction.remove) {
+                setSheetState(() => selectedPhoto = null);
+                return;
+              }
+
+              try {
+                final image = await ImagePicker().pickImage(
+                  source: action == _ProfilePhotoAction.camera
+                      ? ImageSource.camera
+                      : ImageSource.gallery,
+                  maxWidth: 1200,
+                  maxHeight: 1200,
+                  imageQuality: 88,
+                  requestFullMetadata: false,
+                );
+                if (image == null) return;
+                final imageBytes = await image.readAsBytes();
+                if (!sheetContext.mounted) return;
+                setSheetState(() => selectedPhoto = imageBytes);
+              } catch (_) {
+                if (!sheetContext.mounted) return;
+                ScaffoldMessenger.of(sheetContext).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'The photo could not be opened. Check camera or photo permissions and try again.',
+                    ),
+                  ),
+                );
+              }
+            }
+
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                NavAbleSpacing.lg,
+                NavAbleSpacing.xs,
+                NavAbleSpacing.lg,
+                MediaQuery.viewInsetsOf(sheetContext).bottom +
+                    NavAbleSpacing.lg,
               ),
-            ],
-          ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Edit Profile',
+                    style: TextStyle(
+                      color: kNavAbleNavy,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: NavAbleSpacing.md),
+                  Center(
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 104,
+                          height: 104,
+                          padding: const EdgeInsets.all(3),
+                          decoration: const BoxDecoration(
+                            color: kNavAbleGreen,
+                            shape: BoxShape.circle,
+                          ),
+                          child: CircleAvatar(
+                            backgroundColor: const Color(0xFFE8F3EC),
+                            foregroundImage: selectedPhoto == null
+                                ? null
+                                : MemoryImage(selectedPhoto!),
+                            child: selectedPhoto == null
+                                ? Text(
+                                    initialsFor(nameController.text),
+                                    style: const TextStyle(
+                                      color: kNavAbleNavy,
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  )
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(height: NavAbleSpacing.xs),
+                        TextButton.icon(
+                          onPressed: changePhoto,
+                          icon: const Icon(Icons.add_a_photo_outlined),
+                          label: Text(
+                            selectedPhoto == null
+                                ? 'Add Profile Photo'
+                                : 'Change Profile Photo',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: NavAbleSpacing.sm),
+                  _InputField(
+                    controller: nameController,
+                    hintText: 'Full name',
+                    icon: Icons.person_outline,
+                  ),
+                  const SizedBox(height: NavAbleSpacing.sm),
+                  _InputField(
+                    controller: emailController,
+                    hintText: 'Email address',
+                    icon: Icons.email_outlined,
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: NavAbleSpacing.lg),
+                  SizedBox(
+                    width: double.infinity,
+                    height: NavAbleSize.primaryButton,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        final result = AuthService.updateProfile(
+                          fullName: nameController.text,
+                          email: emailController.text,
+                          profileImageBytes: selectedPhoto,
+                        );
+                        if (!result.isSuccess) {
+                          _showMessage(
+                            result.message ?? 'Profile update failed.',
+                          );
+                          return;
+                        }
+
+                        setState(() {});
+                        Navigator.of(sheetContext).pop();
+                        _showMessage('Profile updated locally.');
+                      },
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('Save Profile'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     ).whenComplete(() {
@@ -314,7 +620,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: category,
+                    initialValue: category,
                     decoration: _fieldDecoration(
                       hintText: 'Category',
                       icon: Icons.category_outlined,
@@ -347,7 +653,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 18),
                   SizedBox(
                     width: double.infinity,
-                    height: 52,
+                    height: NavAbleSize.control,
                     child: FilledButton.icon(
                       onPressed: () {
                         final location = locationController.text.trim();
@@ -391,6 +697,25 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _submitReport(AccessReport report) {
+    setState(() {
+      _reports.insert(0, report);
+      _submissions.insert(
+        0,
+        AccessibilitySubmission(
+          title: report.title,
+          submittedOn: 'Today',
+          status: SubmissionStatus.pending,
+          statusDetail: 'Reviewing Details',
+          icon: report.icon,
+        ),
+      );
+    });
+    _showMessage(
+      'Report submitted locally. Thank you for helping the community.',
+    );
+  }
+
   void _openInfoPage(String title, String body) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -399,10 +724,193 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+  void _openAccessibilityFilters() {
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    var ramp = _avoidStairs;
+    var elevator = _prioritizeElevators;
+    var entrance = _accessibleEntrance;
+    var toilet = _accessibleToilet;
+    var tactile = _tactilePaving;
+    var audio = _audioAssistance;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      barrierColor: kNavAbleNavy.withValues(alpha: 0.42),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return FractionallySizedBox(
+              heightFactor: 0.82,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Accessibility Filters',
+                            style: TextStyle(
+                              color: kNavAbleNavy,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close filters',
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                          color: kNavAbleNavy,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Select the features you need to ensure a comfortable and safe journey.',
+                            style: TextStyle(
+                              color: kNavAbleText,
+                              fontSize: 13,
+                              height: 1.45,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _FilterOptionTile(
+                            icon: Icons.accessible_forward_rounded,
+                            label: 'Wheelchair Ramp',
+                            value: ramp,
+                            onChanged: (value) =>
+                                setSheetState(() => ramp = value),
+                          ),
+                          _FilterOptionTile(
+                            icon: Icons.elevator_outlined,
+                            label: 'Elevator',
+                            value: elevator,
+                            onChanged: (value) =>
+                                setSheetState(() => elevator = value),
+                          ),
+                          _FilterOptionTile(
+                            icon: Icons.meeting_room_outlined,
+                            label: 'Accessible Entrance',
+                            value: entrance,
+                            onChanged: (value) =>
+                                setSheetState(() => entrance = value),
+                          ),
+                          _FilterOptionTile(
+                            icon: Icons.wc_rounded,
+                            label: 'Accessible Toilet',
+                            value: toilet,
+                            onChanged: (value) =>
+                                setSheetState(() => toilet = value),
+                          ),
+                          _FilterOptionTile(
+                            icon: Icons.blind_rounded,
+                            label: 'Tactile Paving',
+                            value: tactile,
+                            onChanged: (value) =>
+                                setSheetState(() => tactile = value),
+                          ),
+                          _FilterOptionTile(
+                            icon: Icons.hearing_rounded,
+                            label: 'Audio Assistance',
+                            value: audio,
+                            onChanged: (value) =>
+                                setSheetState(() => audio = value),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          height: NavAbleSize.control,
+                          child: FilledButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _avoidStairs = ramp;
+                                _prioritizeElevators = elevator;
+                                _accessibleEntrance = entrance;
+                                _accessibleToilet = toilet;
+                                _tactilePaving = tactile;
+                                _audioAssistance = audio;
+                              });
+                              Navigator.of(sheetContext).pop();
+                              _showMessage('Accessibility filters applied.');
+                            },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: kNavAbleNavy,
+                              foregroundColor: Colors.white,
+                              shape: const StadiumBorder(),
+                            ),
+                            iconAlignment: IconAlignment.end,
+                            icon: const Icon(
+                              Icons.check_circle_outline_rounded,
+                              size: 19,
+                            ),
+                            label: const Text('Apply Filters'),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          height: NavAbleSize.compactControl,
+                          child: OutlinedButton(
+                            onPressed: () {
+                              setSheetState(() {
+                                ramp = false;
+                                elevator = false;
+                                entrance = false;
+                                toilet = false;
+                                tactile = false;
+                                audio = false;
+                              });
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: kNavAbleNavy,
+                              side: const BorderSide(
+                                color: kNavAbleNavy,
+                                width: 1.5,
+                              ),
+                              shape: const StadiumBorder(),
+                            ),
+                            child: const Text('Clear All'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   IconData _iconForCategory(String category) {
@@ -419,82 +927,105 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = AuthService.currentUser;
     final pages = [
       _PlanPage(
-        userName: user?.fullName ?? 'Traveler',
         destinationController: _destinationController,
         routeStatus: _routeStatus,
         avoidStairs: _avoidStairs,
         prioritizeElevators: _prioritizeElevators,
-        showVerifiedOnly: _showVerifiedOnly,
+        accessibleEntrance: _accessibleEntrance,
+        accessibleToilet: _accessibleToilet,
+        tactilePaving: _tactilePaving,
+        audioAssistance: _audioAssistance,
         reports: _reports,
         onAvoidStairsChanged: (value) => setState(() => _avoidStairs = value),
         onPrioritizeElevatorsChanged: (value) =>
             setState(() => _prioritizeElevators = value),
-        onShowVerifiedOnlyChanged: (value) =>
-            setState(() => _showVerifiedOnly = value),
+        onAccessibleEntranceChanged: (value) =>
+            setState(() => _accessibleEntrance = value),
+        onAccessibleToiletChanged: (value) =>
+            setState(() => _accessibleToilet = value),
+        onTactilePavingChanged: (value) =>
+            setState(() => _tactilePaving = value),
+        onAudioAssistanceChanged: (value) =>
+            setState(() => _audioAssistance = value),
         onPlanRoute: _planRoute,
         onOpenRouteDetails: _openRouteDetails,
         onSaveDestination: _saveDestination,
         onReportBarrier: _openReportSheet,
+        onOpenSaved: _openSavedPlaces,
+        onOpenFilters: _openAccessibilityFilters,
       ),
+      _ExplorePage(searchController: _exploreSearchController),
       _ReportsPage(
         reports: _reports,
-        onAddReport: _openReportSheet,
+        onSubmitReport: _submitReport,
         onOpenReport: _openReportDetails,
       ),
-      _SavedPage(
-        savedPlaces: _savedPlaces,
-        onUsePlace: _useSavedPlace,
-        onDeletePlace: _deleteSavedPlace,
-        onOpenPlace: _openSavedPlaceDetails,
-      ),
+      _AlertsPage(reports: _reports, onOpenReport: _openReportDetails),
       _ProfilePage(
         user: user,
+        contributionPoints: 124,
+        reportCount: _submissions.length,
+        savedPlaceCount: _savedPlaces.length,
+        submissions: _submissions,
         voiceGuidance: _voiceGuidance,
-        highContrastRoutes: _highContrastRoutes,
         onVoiceGuidanceChanged: (value) =>
             setState(() => _voiceGuidance = value),
-        onHighContrastRoutesChanged: (value) =>
-            setState(() => _highContrastRoutes = value),
         onEditProfile: _editProfile,
         onOpenInfo: _openInfoPage,
         onSignOut: () {
           AuthService.signOut();
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute<void>(builder: (context) => const WelcomeScreen()),
+            MaterialPageRoute<void>(
+              builder: (context) => const WelcomeScreen(),
+            ),
             (route) => false,
           );
         },
       ),
     ];
 
+    final theme = Theme.of(context);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF7FAF8),
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('NavAble'),
-        backgroundColor: Colors.white,
-        foregroundColor: kNavAbleNavy,
+        toolbarHeight: 58,
+        leading: _selectedIndex == 1
+            ? IconButton(
+                tooltip: 'Back to Home',
+                onPressed: () => setState(() => _selectedIndex = 0),
+                icon: const Icon(Icons.arrow_back_rounded),
+              )
+            : null,
+        title: const SizedBox.shrink(),
         elevation: 0,
         actions: [
           IconButton(
-            tooltip: 'Help',
-            onPressed: () => _openInfoPage(
-              'Help Center',
-              'This Flutter-only prototype includes local route planning, saved places, reports, and profile preferences. Live maps, AI routing, and cloud sync will be connected later.',
-            ),
-            icon: const Icon(Icons.help_outline_rounded),
+            tooltip: 'Profile',
+            onPressed: () => setState(() => _selectedIndex = 4),
+            icon: const Icon(Icons.account_circle_outlined),
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(child: pages[_selectedIndex]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) => setState(() => _selectedIndex = index),
-        indicatorColor: kNavAbleAccent,
+        onDestinationSelected: (index) =>
+            setState(() => _selectedIndex = index),
+        indicatorColor: theme.brightness == Brightness.dark
+            ? NavAblePalette.green.withValues(alpha: 0.2)
+            : kNavAbleAccent,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.route_outlined),
-            selectedIcon: Icon(Icons.route_rounded),
-            label: 'Plan',
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore_rounded),
+            label: 'Explore',
           ),
           NavigationDestination(
             icon: Icon(Icons.fact_check_outlined),
@@ -502,9 +1033,9 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Reports',
           ),
           NavigationDestination(
-            icon: Icon(Icons.bookmark_border_rounded),
-            selectedIcon: Icon(Icons.bookmark_rounded),
-            label: 'Saved',
+            icon: Icon(Icons.notifications_none_rounded),
+            selectedIcon: Icon(Icons.notifications_rounded),
+            label: 'Alerts',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
@@ -561,138 +1092,22 @@ class AccessReport {
   }
 }
 
-class _PlanPage extends StatelessWidget {
-  const _PlanPage({
-    required this.userName,
-    required this.destinationController,
-    required this.routeStatus,
-    required this.avoidStairs,
-    required this.prioritizeElevators,
-    required this.showVerifiedOnly,
-    required this.reports,
-    required this.onAvoidStairsChanged,
-    required this.onPrioritizeElevatorsChanged,
-    required this.onShowVerifiedOnlyChanged,
-    required this.onPlanRoute,
-    required this.onOpenRouteDetails,
-    required this.onSaveDestination,
-    required this.onReportBarrier,
+enum SubmissionStatus { pending, approved, rejected }
+
+class AccessibilitySubmission {
+  const AccessibilitySubmission({
+    required this.title,
+    required this.submittedOn,
+    required this.status,
+    required this.statusDetail,
+    required this.icon,
   });
 
-  final String userName;
-  final TextEditingController destinationController;
-  final String? routeStatus;
-  final bool avoidStairs;
-  final bool prioritizeElevators;
-  final bool showVerifiedOnly;
-  final List<AccessReport> reports;
-  final ValueChanged<bool> onAvoidStairsChanged;
-  final ValueChanged<bool> onPrioritizeElevatorsChanged;
-  final ValueChanged<bool> onShowVerifiedOnlyChanged;
-  final VoidCallback onPlanRoute;
-  final VoidCallback onOpenRouteDetails;
-  final VoidCallback onSaveDestination;
-  final VoidCallback onReportBarrier;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-      children: [
-        Text(
-          'Hello, $userName',
-          style: const TextStyle(
-            color: kNavAbleNavy,
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Plan a step-free route with accessibility checks before you go.',
-          style: TextStyle(
-            color: kNavAbleText,
-            fontSize: 14,
-            height: 1.45,
-            letterSpacing: 0,
-          ),
-        ),
-        const SizedBox(height: 20),
-        _RoutePlannerCard(
-          destinationController: destinationController,
-          routeStatus: routeStatus ?? 'Ready to plan an accessible route.',
-          avoidStairs: avoidStairs,
-          prioritizeElevators: prioritizeElevators,
-          showVerifiedOnly: showVerifiedOnly,
-          onAvoidStairsChanged: onAvoidStairsChanged,
-          onPrioritizeElevatorsChanged: onPrioritizeElevatorsChanged,
-          onShowVerifiedOnlyChanged: onShowVerifiedOnlyChanged,
-          onPlanRoute: onPlanRoute,
-          onOpenRouteDetails: onOpenRouteDetails,
-        ),
-        const SizedBox(height: 18),
-        const _MapPreview(),
-        const SizedBox(height: 18),
-        Row(
-          children: [
-            Expanded(
-              child: _ActionButton(
-                icon: Icons.report_problem_outlined,
-                label: 'Report Barrier',
-                onPressed: onReportBarrier,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _ActionButton(
-                icon: Icons.place_outlined,
-                label: 'Save Place',
-                onPressed: onSaveDestination,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        _ReportsPreview(reports: reports.take(3).toList()),
-      ],
-    );
-  }
-}
-
-class _ReportsPage extends StatelessWidget {
-  const _ReportsPage({
-    required this.reports,
-    required this.onAddReport,
-    required this.onOpenReport,
-  });
-
-  final List<AccessReport> reports;
-  final VoidCallback onAddReport;
-  final ValueChanged<AccessReport> onOpenReport;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-      children: [
-        _SectionHeader(
-          title: 'Accessibility Reports',
-          actionLabel: 'Add',
-          onAction: onAddReport,
-        ),
-        const SizedBox(height: 14),
-        for (final report in reports)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _ReportCard(
-              report: report,
-              onTap: () => onOpenReport(report),
-            ),
-          ),
-      ],
-    );
-  }
+  final String title;
+  final String submittedOn;
+  final SubmissionStatus status;
+  final String statusDetail;
+  final IconData icon;
 }
 
 class _SavedPage extends StatelessWidget {
@@ -713,16 +1128,6 @@ class _SavedPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
       children: [
-        const Text(
-          'Saved Places',
-          style: TextStyle(
-            color: kNavAbleNavy,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0,
-          ),
-        ),
-        const SizedBox(height: 14),
         if (savedPlaces.isEmpty)
           const _EmptyState(
             icon: Icons.bookmark_border_rounded,
@@ -781,151 +1186,6 @@ class _SavedPage extends StatelessWidget {
                 ),
               ),
             ),
-      ],
-    );
-  }
-}
-
-class _ProfilePage extends StatelessWidget {
-  const _ProfilePage({
-    required this.user,
-    required this.voiceGuidance,
-    required this.highContrastRoutes,
-    required this.onVoiceGuidanceChanged,
-    required this.onHighContrastRoutesChanged,
-    required this.onEditProfile,
-    required this.onOpenInfo,
-    required this.onSignOut,
-  });
-
-  final NavAbleUser? user;
-  final bool voiceGuidance;
-  final bool highContrastRoutes;
-  final ValueChanged<bool> onVoiceGuidanceChanged;
-  final ValueChanged<bool> onHighContrastRoutesChanged;
-  final VoidCallback onEditProfile;
-  final void Function(String title, String body) onOpenInfo;
-  final VoidCallback onSignOut;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-      children: [
-        _Panel(
-          child: Row(
-            children: [
-              const CircleAvatar(
-                radius: 28,
-                backgroundColor: kNavAbleAccent,
-                child: Icon(Icons.person_rounded, color: kNavAbleGreen),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      user?.fullName ?? 'Traveler',
-                      style: const TextStyle(
-                        color: kNavAbleNavy,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      user?.email ?? 'Local demo account',
-                      style: const TextStyle(
-                        color: kNavAbleText,
-                        fontSize: 13,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                tooltip: 'Edit profile',
-                onPressed: onEditProfile,
-                icon: const Icon(Icons.edit_outlined),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        _Panel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Accessibility Preferences',
-                style: TextStyle(
-                  color: kNavAbleNavy,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0,
-                ),
-              ),
-              _SwitchRow(
-                label: 'Voice guidance',
-                value: voiceGuidance,
-                onChanged: onVoiceGuidanceChanged,
-              ),
-              _SwitchRow(
-                label: 'High contrast routes',
-                value: highContrastRoutes,
-                onChanged: onHighContrastRoutesChanged,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        _ProfileLink(
-          icon: Icons.support_agent_rounded,
-          label: 'Accessibility Support',
-          onTap: () => onOpenInfo(
-            'Accessibility Support',
-            'Support contact tools are ready as Flutter screens. A real support email, chat, or ticketing service can be connected later.',
-          ),
-        ),
-        _ProfileLink(
-          icon: Icons.privacy_tip_outlined,
-          label: 'Privacy Policy',
-          onTap: () => onOpenInfo(
-            'Privacy Policy',
-            'This front-end prototype stores account, report, and saved-place data only in memory while the app is running.',
-          ),
-        ),
-        _ProfileLink(
-          icon: Icons.description_outlined,
-          label: 'Terms of Service',
-          onTap: () => onOpenInfo(
-            'Terms of Service',
-            'These placeholder terms are included so the app navigation is complete before production legal text is added.',
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 52,
-          child: OutlinedButton.icon(
-            onPressed: onSignOut,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: kNavAbleNavy,
-              side: const BorderSide(color: Color(0xFFDDE5DF), width: 1.4),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              backgroundColor: Colors.white,
-            ),
-            icon: const Icon(Icons.logout_rounded),
-            label: const Text(
-              'Sign Out',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -1080,8 +1340,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final confirmations =
-        widget.report.confirmations + (_confirmed ? 1 : 0);
+    final confirmations = widget.report.confirmations + (_confirmed ? 1 : 0);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAF8),
@@ -1139,7 +1398,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
-                    height: 52,
+                    height: NavAbleSize.control,
                     child: FilledButton.icon(
                       onPressed: _confirmed
                           ? null
@@ -1206,9 +1465,9 @@ class _SavedPlaceDetailsScreenState extends State<SavedPlaceDetailsScreen> {
     final name = _nameController.text.trim();
     final address = _addressController.text.trim();
     if (name.isEmpty || address.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add a name and address.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Add a name and address.')));
       return;
     }
 
@@ -1247,7 +1506,7 @@ class _SavedPlaceDetailsScreenState extends State<SavedPlaceDetailsScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: _tag,
+                    initialValue: _tag,
                     decoration: _fieldDecoration(
                       hintText: 'Tag',
                       icon: Icons.label_outline,
@@ -1255,7 +1514,10 @@ class _SavedPlaceDetailsScreenState extends State<SavedPlaceDetailsScreen> {
                     items: const [
                       DropdownMenuItem(value: 'Home', child: Text('Home')),
                       DropdownMenuItem(value: 'Work', child: Text('Work')),
-                      DropdownMenuItem(value: 'Transit', child: Text('Transit')),
+                      DropdownMenuItem(
+                        value: 'Transit',
+                        child: Text('Transit'),
+                      ),
                       DropdownMenuItem(value: 'Civic', child: Text('Civic')),
                       DropdownMenuItem(value: 'Custom', child: Text('Custom')),
                     ],
@@ -1293,149 +1555,6 @@ class _SavedPlaceDetailsScreenState extends State<SavedPlaceDetailsScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RoutePlannerCard extends StatelessWidget {
-  const _RoutePlannerCard({
-    required this.destinationController,
-    required this.routeStatus,
-    required this.avoidStairs,
-    required this.prioritizeElevators,
-    required this.showVerifiedOnly,
-    required this.onAvoidStairsChanged,
-    required this.onPrioritizeElevatorsChanged,
-    required this.onShowVerifiedOnlyChanged,
-    required this.onPlanRoute,
-    required this.onOpenRouteDetails,
-  });
-
-  final TextEditingController destinationController;
-  final String routeStatus;
-  final bool avoidStairs;
-  final bool prioritizeElevators;
-  final bool showVerifiedOnly;
-  final ValueChanged<bool> onAvoidStairsChanged;
-  final ValueChanged<bool> onPrioritizeElevatorsChanged;
-  final ValueChanged<bool> onShowVerifiedOnlyChanged;
-  final VoidCallback onPlanRoute;
-  final VoidCallback onOpenRouteDetails;
-
-  @override
-  Widget build(BuildContext context) {
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Route Planner',
-            style: TextStyle(
-              color: kNavAbleNavy,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 14),
-          _InputField(
-            controller: destinationController,
-            hintText: 'Where are you going?',
-            icon: Icons.search_rounded,
-            textInputAction: TextInputAction.search,
-            onSubmitted: (_) => onPlanRoute(),
-          ),
-          const SizedBox(height: 12),
-          _SwitchRow(
-            label: 'Avoid stairs',
-            value: avoidStairs,
-            onChanged: onAvoidStairsChanged,
-          ),
-          _SwitchRow(
-            label: 'Prioritize elevators',
-            value: prioritizeElevators,
-            onChanged: onPrioritizeElevatorsChanged,
-          ),
-          _SwitchRow(
-            label: 'Peer-verified only',
-            value: showVerifiedOnly,
-            onChanged: onShowVerifiedOnlyChanged,
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: FilledButton.icon(
-              onPressed: onPlanRoute,
-              style: FilledButton.styleFrom(
-                backgroundColor: kNavAbleNavy,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              icon: const Icon(Icons.route_rounded),
-              label: const Text(
-                'Plan Accessible Route',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            routeStatus,
-            style: const TextStyle(
-              color: kNavAbleText,
-              fontSize: 13,
-              height: 1.45,
-              letterSpacing: 0,
-            ),
-          ),
-          if (!routeStatus.startsWith('Ready') &&
-              !routeStatus.startsWith('Enter')) ...[
-            const SizedBox(height: 10),
-            TextButton.icon(
-              onPressed: onOpenRouteDetails,
-              icon: const Icon(Icons.list_alt_rounded),
-              label: const Text('View Route Details'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SwitchRow extends StatelessWidget {
-  const _SwitchRow({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String label;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: SwitchListTile(
-        value: value,
-        onChanged: onChanged,
-        contentPadding: EdgeInsets.zero,
-        dense: true,
-        activeColor: kNavAbleGreen,
-        title: Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFF344054),
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0,
-          ),
         ),
       ),
     );
@@ -1480,143 +1599,6 @@ class _InstructionStep extends StatelessWidget {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MapPreview extends StatelessWidget {
-  const _MapPreview();
-
-  @override
-  Widget build(BuildContext context) {
-    return _Panel(
-      child: SizedBox(
-        height: 190,
-        child: Stack(
-          children: [
-            Positioned.fill(child: CustomPaint(painter: _MapPainter())),
-            const Positioned(
-              top: 12,
-              left: 12,
-              child: _MapBadge(icon: Icons.accessible, label: 'Ramp'),
-            ),
-            const Positioned(
-              right: 12,
-              bottom: 12,
-              child: _MapBadge(icon: Icons.elevator, label: 'Elevator'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final streetPaint = Paint()
-      ..color = const Color(0xFFDDE5DF)
-      ..strokeWidth = 12
-      ..strokeCap = StrokeCap.round;
-    final routePaint = Paint()
-      ..color = kNavAbleGreen
-      ..strokeWidth = 7
-      ..strokeCap = StrokeCap.round;
-    final pointPaint = Paint()..color = kNavAbleNavy;
-
-    canvas.drawLine(
-      Offset(size.width * 0.08, size.height * 0.72),
-      Offset(size.width * 0.92, size.height * 0.24),
-      streetPaint,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.12, size.height * 0.26),
-      Offset(size.width * 0.86, size.height * 0.76),
-      streetPaint,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.14, size.height * 0.68),
-      Offset(size.width * 0.78, size.height * 0.33),
-      routePaint,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.14, size.height * 0.68),
-      8,
-      pointPaint,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.78, size.height * 0.33),
-      8,
-      pointPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _MapBadge extends StatelessWidget {
-  const _MapBadge({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFDDE5DF)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: kNavAbleGreen, size: 18),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                color: kNavAbleNavy,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ReportsPreview extends StatelessWidget {
-  const _ReportsPreview({required this.reports});
-
-  final List<AccessReport> reports;
-
-  @override
-  Widget build(BuildContext context) {
-    return _Panel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Nearby Accessibility Reports',
-            style: TextStyle(
-              color: kNavAbleNavy,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 14),
-          for (final report in reports) _ReportTile(report: report),
         ],
       ),
     );
@@ -1706,123 +1688,6 @@ class _ReportTile extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.title,
-    required this.actionLabel,
-    required this.onAction,
-  });
-
-  final String title;
-  final String actionLabel;
-  final VoidCallback onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: kNavAbleNavy,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
-        FilledButton.icon(
-          onPressed: onAction,
-          style: FilledButton.styleFrom(
-            backgroundColor: kNavAbleNavy,
-            foregroundColor: Colors.white,
-          ),
-          icon: const Icon(Icons.add_rounded, size: 20),
-          label: Text(actionLabel),
-        ),
-      ],
-    );
-  }
-}
-
-class _ProfileLink extends StatelessWidget {
-  const _ProfileLink({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: _Panel(
-        child: InkWell(
-          onTap: onTap,
-          child: Row(
-            children: [
-              Icon(icon, color: kNavAbleGreen),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: kNavAbleNavy,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0,
-                  ),
-                ),
-              ),
-              const Icon(Icons.chevron_right_rounded, color: kNavAbleText),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 54,
-      child: OutlinedButton.icon(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: kNavAbleNavy,
-          side: const BorderSide(color: Color(0xFFDDE5DF), width: 1.4),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          backgroundColor: Colors.white,
-        ),
-        icon: Icon(icon, color: kNavAbleGreen),
-        label: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _InputField extends StatelessWidget {
   const _InputField({
     required this.controller,
@@ -1830,8 +1695,6 @@ class _InputField extends StatelessWidget {
     required this.icon,
     this.maxLines = 1,
     this.keyboardType,
-    this.textInputAction,
-    this.onSubmitted,
   });
 
   final TextEditingController controller;
@@ -1839,8 +1702,6 @@ class _InputField extends StatelessWidget {
   final IconData icon;
   final int maxLines;
   final TextInputType? keyboardType;
-  final TextInputAction? textInputAction;
-  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
@@ -1848,8 +1709,6 @@ class _InputField extends StatelessWidget {
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      onSubmitted: onSubmitted,
       decoration: _fieldDecoration(hintText: hintText, icon: icon),
     );
   }
@@ -1973,21 +1832,11 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return NavAbleSurface(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: const Color(0xFFE0E8E2)),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: kNavAbleNavy.withValues(alpha: 0.06),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(NavAbleSpacing.cardInset),
+      borderRadius: NavAbleRadius.card,
+      color: NavAblePalette.surface,
       child: child,
     );
   }

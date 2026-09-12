@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'auth_service.dart';
 import 'forgot.dart';
 import 'home.dart';
+import 'navable_design.dart';
 import 'register.dart';
 import 'splash.dart';
 
-const Color kNavAbleNavy = Color(0xFF0F2B4D);
-const Color kNavAbleGreen = Color(0xFF5BC66B);
-const Color kNavAbleAccent = Color(0xFFF3FFF4);
-const Color kNavAbleText = Color(0xFF4A5563);
+const Color kNavAbleNavy = NavAblePalette.navy;
+const Color kNavAbleGreen = NavAblePalette.green;
+const Color kNavAbleAccent = NavAblePalette.accent;
+const Color kNavAbleText = NavAblePalette.text;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -22,8 +23,12 @@ class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   bool _rememberDevice = false;
   bool _obscurePassword = true;
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController(
+    text: AuthService.demoEmail,
+  );
+  final TextEditingController _passwordController = TextEditingController(
+    text: AuthService.demoPassword,
+  );
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
@@ -67,9 +72,9 @@ class _LoginScreenState extends State<LoginScreen>
       return;
     }
 
-    Navigator.of(context).pushReplacement(
-      _fadeRoute(const SplashScreen(nextScreen: HomeScreen())),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(_fadeRoute(const SplashScreen(nextScreen: HomeScreen())));
   }
 
   void _showProviderPlaceholder(String provider) {
@@ -205,8 +210,9 @@ class _LoginScreenState extends State<LoginScreen>
                                             );
                                           },
                                           shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(7),
+                                            borderRadius: BorderRadius.circular(
+                                              7,
+                                            ),
                                           ),
                                           side: const BorderSide(
                                             color: Color(0xFFB8C2BE),
@@ -242,16 +248,14 @@ class _LoginScreenState extends State<LoginScreen>
                               children: [
                                 _RoundIconButton(
                                   icon: Icons.fingerprint,
-                                  onPressed: () => _showProviderPlaceholder(
-                                    'Fingerprint',
-                                  ),
+                                  onPressed: () =>
+                                      _showProviderPlaceholder('Fingerprint'),
                                 ),
                                 const SizedBox(width: 18),
                                 _RoundIconButton(
                                   icon: Icons.face,
-                                  onPressed: () => _showProviderPlaceholder(
-                                    'Face ID',
-                                  ),
+                                  onPressed: () =>
+                                      _showProviderPlaceholder('Face ID'),
                                 ),
                               ],
                             ),
@@ -269,9 +273,9 @@ class _LoginScreenState extends State<LoginScreen>
                                 ),
                                 TextButton(
                                   onPressed: () {
-                                    Navigator.of(context).push(
-                                      _fadeRoute(const RegisterScreen()),
-                                    );
+                                    Navigator.of(
+                                      context,
+                                    ).push(_fadeRoute(const RegisterScreen()));
                                   },
                                   style: TextButton.styleFrom(
                                     minimumSize: Size.zero,
@@ -383,21 +387,10 @@ class _PremiumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return NavAbleSurface(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 24, 22, 24),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        border: Border.all(color: const Color(0xFFE0E8E2)),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: kNavAbleNavy.withValues(alpha: 0.08),
-            blurRadius: 28,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
+      color: NavAblePalette.surface,
       child: child,
     );
   }
@@ -447,18 +440,22 @@ class _LoginField extends StatelessWidget {
         ),
         const SizedBox(height: 9),
         SizedBox(
-          height: 56,
+          height: NavAbleSize.field,
           child: TextField(
             controller: controller,
             keyboardType: keyboardType,
             obscureText: obscureText,
             decoration: InputDecoration(
               prefixIcon: Icon(icon, color: kNavAbleGreen, size: 20),
-              prefixIconConstraints:
-                  const BoxConstraints(minWidth: 48, minHeight: 56),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 56,
+              ),
               suffixIcon: suffixIcon,
-              suffixIconConstraints:
-                  const BoxConstraints(minWidth: 48, minHeight: 56),
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 56,
+              ),
               hintText: hintText,
               hintStyle: const TextStyle(
                 color: Color(0xFF98A2B3),
@@ -467,8 +464,10 @@ class _LoginField extends StatelessWidget {
               ),
               filled: true,
               fillColor: const Color(0xFFF7FAF8),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 18,
+              ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: const BorderSide(color: Color(0xFFDDE5DF)),
@@ -510,7 +509,7 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
         curve: Curves.easeOut,
         child: SizedBox(
           width: double.infinity,
-          height: 58,
+          height: NavAbleSize.primaryButton,
           child: FilledButton(
             onPressed: widget.onPressed,
             style: FilledButton.styleFrom(
@@ -519,7 +518,7 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
               elevation: 8,
               shadowColor: kNavAbleNavy.withValues(alpha: 0.22),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(NavAbleRadius.button),
               ),
             ),
             child: Row(
@@ -582,7 +581,7 @@ class _RoundIconButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        fixedSize: const Size(58, 58),
+        fixedSize: const Size.square(NavAbleSize.primaryButton),
         shape: const CircleBorder(),
         side: const BorderSide(color: Color(0xFFDDE5DF), width: 1.4),
         foregroundColor: kNavAbleGreen,

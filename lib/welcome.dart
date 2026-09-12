@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'login.dart';
+import 'navable_design.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
 
-  static const Color _navy = Color(0xFF0F2B4D);
-  static const Color _green = Color(0xFF5BC66B);
-  static const Color _accent = Color(0xFFF3FFF4);
-  static const Color _text = Color(0xFF4A5563);
+  static const Color _navy = NavAblePalette.navy;
+  static const Color _green = NavAblePalette.green;
+  static const Color _text = NavAblePalette.text;
 
   @override
   State<WelcomeScreen> createState() => _WelcomeScreenState();
@@ -34,9 +34,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.035),
       end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
     _controller.forward();
   }
@@ -55,11 +53,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFF7FFF8),
-              Colors.white,
-              Color(0xFFECFFF0),
-            ],
+            colors: [Color(0xFFF7FFF8), Colors.white, Color(0xFFECFFF0)],
             stops: [0, 0.52, 1],
           ),
         ),
@@ -135,18 +129,19 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                         ),
                                         reverseTransitionDuration:
                                             const Duration(milliseconds: 260),
-                                        pageBuilder: (
-                                          context,
-                                          animation,
-                                          secondaryAnimation,
-                                        ) =>
-                                            const LoginScreen(),
-                                        transitionsBuilder: (
-                                          context,
-                                          animation,
-                                          secondaryAnimation,
-                                          child,
-                                        ) {
+                                        pageBuilder:
+                                            (
+                                              context,
+                                              animation,
+                                              secondaryAnimation,
+                                            ) => const LoginScreen(),
+                                        transitionsBuilder:
+                                            (
+                                              context,
+                                              animation,
+                                              secondaryAnimation,
+                                              child,
+                                            ) {
                                               final curved = CurvedAnimation(
                                                 parent: animation,
                                                 curve: Curves.easeOutCubic,
@@ -273,42 +268,34 @@ class _FeatureChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 54,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: WelcomeScreen._accent.withValues(alpha: 0.82),
-        border: Border.all(color: const Color(0xFFDDE5DF)),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: WelcomeScreen._navy.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: WelcomeScreen._green, size: 20),
-          const SizedBox(width: 7),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  color: WelcomeScreen._navy,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0,
+    return SizedBox(
+      height: NavAbleSize.control,
+      child: NavAbleSurface(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        borderRadius: 28,
+        color: const Color(0xFFF5F9F5),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: WelcomeScreen._green, size: 20),
+            const SizedBox(width: 7),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: WelcomeScreen._navy,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -351,7 +338,7 @@ class _PrimaryCtaButtonState extends State<_PrimaryCtaButton> {
           curve: Curves.easeOut,
           child: SizedBox(
             width: double.infinity,
-            height: 58,
+            height: NavAbleSize.primaryButton,
             child: FilledButton(
               onPressed: widget.onPressed,
               style: FilledButton.styleFrom(
@@ -360,7 +347,7 @@ class _PrimaryCtaButtonState extends State<_PrimaryCtaButton> {
                 elevation: _isHovered ? 10 : 8,
                 shadowColor: WelcomeScreen._navy.withValues(alpha: 0.22),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(NavAbleRadius.button),
                 ),
                 textStyle: const TextStyle(
                   fontSize: 18,

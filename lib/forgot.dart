@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import 'navable_design.dart';
+
 import 'auth_service.dart';
 
-const Color _navAbleNavy = Color(0xFF0F2B4D);
-const Color _navAbleGreen = Color(0xFF5BC66B);
-const Color _navAbleAccent = Color(0xFFF3FFF4);
-const Color _navAbleText = Color(0xFF4A5563);
+const Color _navAbleNavy = NavAblePalette.navy;
+const Color _navAbleGreen = NavAblePalette.green;
+const Color _navAbleAccent = NavAblePalette.accent;
+const Color _navAbleText = NavAblePalette.text;
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -49,9 +51,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   void _sendResetLink() {
     final message = AuthService.resetPassword(_emailController.text);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showSupportMessage(String destination) {
@@ -147,18 +149,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                               icon: Icons.support_agent_rounded,
                               label: 'Contact Accessibility Support',
                               color: _navAbleGreen,
-                              onPressed: () => _showSupportMessage(
-                                'Accessibility support',
-                              ),
+                              onPressed: () =>
+                                  _showSupportMessage('Accessibility support'),
                             ),
                             const SizedBox(height: 10),
                             _SupportAction(
                               icon: Icons.help_outline_rounded,
                               label: 'Visit Help Center',
                               color: _navAbleNavy,
-                              onPressed: () => _showSupportMessage(
-                                'Help Center',
-                              ),
+                              onPressed: () =>
+                                  _showSupportMessage('Help Center'),
                             ),
                             const SizedBox(height: 26),
                             const _HelpNotice(),
@@ -248,7 +248,7 @@ class _BackButton extends StatelessWidget {
       color: _navAbleNavy,
       style: IconButton.styleFrom(
         backgroundColor: Colors.white.withValues(alpha: 0.8),
-        fixedSize: const Size(46, 46),
+        fixedSize: const Size.square(NavAbleSize.compactControl),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
@@ -262,21 +262,10 @@ class _PremiumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return NavAbleSurface(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 24, 22, 24),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        border: Border.all(color: const Color(0xFFE0E8E2)),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: _navAbleNavy.withValues(alpha: 0.08),
-            blurRadius: 28,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
+      color: NavAblePalette.surface,
       child: child,
     );
   }
@@ -332,15 +321,19 @@ class _EmailResetField extends StatelessWidget {
         ),
         const SizedBox(height: 9),
         SizedBox(
-          height: 56,
+          height: NavAbleSize.field,
           child: TextField(
             controller: controller,
             keyboardType: TextInputType.emailAddress,
             decoration: InputDecoration(
-              prefixIcon:
-                  const Icon(Icons.email_outlined, color: _navAbleGreen),
-              prefixIconConstraints:
-                  const BoxConstraints(minWidth: 48, minHeight: 56),
+              prefixIcon: const Icon(
+                Icons.email_outlined,
+                color: _navAbleGreen,
+              ),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 48,
+                minHeight: 56,
+              ),
               hintText: 'june@example.com',
               hintStyle: const TextStyle(
                 color: Color(0xFF98A2B3),
@@ -349,16 +342,17 @@ class _EmailResetField extends StatelessWidget {
               ),
               filled: true,
               fillColor: const Color(0xFFF7FAF8),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 18,
+              ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: const BorderSide(color: Color(0xFFDDE5DF)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    const BorderSide(color: _navAbleGreen, width: 1.5),
+                borderSide: const BorderSide(color: _navAbleGreen, width: 1.5),
               ),
             ),
           ),
@@ -420,7 +414,7 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
         curve: Curves.easeOut,
         child: SizedBox(
           width: double.infinity,
-          height: 58,
+          height: NavAbleSize.primaryButton,
           child: FilledButton(
             onPressed: widget.onPressed,
             style: FilledButton.styleFrom(
@@ -429,7 +423,7 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
               elevation: 8,
               shadowColor: _navAbleNavy.withValues(alpha: 0.22),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(NavAbleRadius.button),
               ),
             ),
             child: Row(
@@ -507,7 +501,7 @@ class _HelpNotice extends StatelessWidget {
       decoration: BoxDecoration(
         color: _navAbleAccent.withValues(alpha: 0.92),
         border: Border.all(color: const Color(0xFFDDE5DF)),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(NavAbleRadius.card),
       ),
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,

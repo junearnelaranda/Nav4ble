@@ -1,13 +1,17 @@
+import 'dart:typed_data';
+
 class NavAbleUser {
   const NavAbleUser({
     required this.fullName,
     required this.email,
     required this.password,
+    this.profileImageBytes,
   });
 
   final String fullName;
   final String email;
   final String password;
+  final Uint8List? profileImageBytes;
 }
 
 class AuthResult {
@@ -20,18 +24,20 @@ class AuthResult {
 
   factory AuthResult.success(NavAbleUser user) => AuthResult._(user: user);
 
-  factory AuthResult.failure(String message) =>
-      AuthResult._(message: message);
+  factory AuthResult.failure(String message) => AuthResult._(message: message);
 }
 
 class AuthService {
   AuthService._();
 
+  static const String demoEmail = 'june@gmail.com';
+  static const String demoPassword = 'june1234';
+
   static final Map<String, NavAbleUser> _users = {
-    'demo@navable.app': const NavAbleUser(
-      fullName: 'Demo Rider',
-      email: 'demo@navable.app',
-      password: 'password123',
+    demoEmail: const NavAbleUser(
+      fullName: 'June',
+      email: demoEmail,
+      password: demoPassword,
     ),
   };
 
@@ -77,10 +83,7 @@ class AuthService {
     return AuthResult.success(user);
   }
 
-  static AuthResult login({
-    required String email,
-    required String password,
-  }) {
+  static AuthResult login({required String email, required String password}) {
     final cleanedEmail = email.trim().toLowerCase();
 
     if (!isValidEmail(cleanedEmail)) {
@@ -115,6 +118,7 @@ class AuthService {
   static AuthResult updateProfile({
     required String fullName,
     required String email,
+    required Uint8List? profileImageBytes,
   }) {
     final activeUser = currentUser;
     if (activeUser == null) {
@@ -139,6 +143,7 @@ class AuthService {
       fullName: cleanedName,
       email: cleanedEmail,
       password: activeUser.password,
+      profileImageBytes: profileImageBytes,
     );
     _users[cleanedEmail] = updatedUser;
     currentUser = updatedUser;
