@@ -1,9 +1,13 @@
 part of '../home.dart';
 
 class _ExplorePage extends StatefulWidget {
-  const _ExplorePage({required this.searchController});
+  const _ExplorePage({
+    required this.searchController,
+    required this.onNavigate,
+  });
 
   final TextEditingController searchController;
+  final ValueChanged<String> onNavigate;
 
   @override
   State<_ExplorePage> createState() => _ExplorePageState();
@@ -176,7 +180,10 @@ class _ExplorePageState extends State<_ExplorePage> {
               )
             else
               for (final place in places) ...[
-                _ExplorePlaceCard(place: place),
+                _ExplorePlaceCard(
+                  place: place,
+                  onNavigate: widget.onNavigate,
+                ),
                 const SizedBox(height: 12),
               ],
           ],
@@ -258,9 +265,10 @@ class _ExploreSearchField extends StatelessWidget {
 }
 
 class _ExplorePlaceCard extends StatelessWidget {
-  const _ExplorePlaceCard({required this.place});
+  const _ExplorePlaceCard({required this.place, required this.onNavigate});
 
   final _ExplorePlace place;
+  final ValueChanged<String> onNavigate;
 
   @override
   Widget build(BuildContext context) {
@@ -273,8 +281,13 @@ class _ExplorePlaceCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('${place.name} is local demo content.')),
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (context) => _ExplorePlaceDetails(
+                  place: place,
+                  onNavigate: onNavigate,
+                ),
+              ),
             );
           },
           child: Column(
@@ -378,6 +391,95 @@ class _ExplorePlaceCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExplorePlaceDetails extends StatelessWidget {
+  const _ExplorePlaceDetails({
+    required this.place,
+    required this.onNavigate,
+  });
+
+  final _ExplorePlace place;
+  final ValueChanged<String> onNavigate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Place Details')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(NavAbleSpacing.md),
+          children: [
+            NavAbleSurface(
+              width: double.infinity,
+              padding: const EdgeInsets.all(NavAbleSpacing.cardInset),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: kNavAbleAccent,
+                    child: Icon(place.icon, color: kNavAbleNavy, size: 30),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    place.name,
+                    style: const TextStyle(
+                      color: kNavAbleNavy,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${place.distance} • ${place.location}',
+                    style: const TextStyle(color: kNavAbleText),
+                  ),
+                  const SizedBox(height: 22),
+                  const Text(
+                    'Accessibility',
+                    style: TextStyle(
+                      color: kNavAbleNavy,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final feature in place.tags)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.check_circle_rounded,
+                            color: kNavAbleGreen,
+                            size: 21,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(child: Text(feature)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              height: NavAbleSize.primaryButton,
+              child: FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  onNavigate(place.name);
+                },
+                icon: const Icon(Icons.navigation_rounded),
+                label: const Text('Navigate'),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -83,6 +83,13 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  void _continueAsGuest() {
+    AuthService.signOut();
+    Navigator.of(context).pushReplacement(
+      _fadeRoute(const SplashScreen(nextScreen: HomeScreen(isGuest: true))),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -243,6 +250,37 @@ class _LoginScreenState extends State<LoginScreen>
                             const SizedBox(height: 24),
                             const _DividerLabel(),
                             const SizedBox(height: 20),
+                            SizedBox(
+                              width: double.infinity,
+                              height: NavAbleSize.primaryButton,
+                              child: OutlinedButton.icon(
+                                onPressed: _continueAsGuest,
+                                icon: const Icon(Icons.person_outline_rounded),
+                                label: const Text('Continue as a Guest'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: kNavAbleNavy,
+                                  side: const BorderSide(
+                                    color: kNavAbleGreen,
+                                    width: 1.5,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Search  →  View place  →  Check accessibility  →  Navigate',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: kNavAbleText,
+                                fontSize: 12,
+                                height: 1.4,
+                                letterSpacing: 0,
+                              ),
+                            ),
+                            const SizedBox(height: 22),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [

@@ -2,9 +2,56 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:navable/home.dart';
 import 'package:navable/main.dart';
+import 'package:navable/login.dart';
 import 'package:navable/register.dart';
 
 void main() {
+  testWidgets('guest can search, inspect accessibility, and navigate', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+
+    expect(find.text('Continue as a Guest'), findsOneWidget);
+    expect(
+      find.text(
+        'Search  →  View place  →  Check accessibility  →  Navigate',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Continue as a Guest'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1900));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Explore'), findsOneWidget);
+    expect(find.text('Reports'), findsNothing);
+    expect(find.text('Alerts'), findsNothing);
+    expect(find.text('Profile'), findsNothing);
+
+    await tester.tap(find.text('Explore'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Figaro');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Figaro Coffee'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Place Details'), findsOneWidget);
+    expect(find.text('Accessibility'), findsOneWidget);
+    expect(find.text('Braille'), findsOneWidget);
+    expect(find.text('Navigate'), findsOneWidget);
+
+    await tester.tap(find.text('Navigate'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Route to Figaro Coffee ready'), findsOneWidget);
+  });
+
   testWidgets('opens welcome, login, and home flow', (
     WidgetTester tester,
   ) async {

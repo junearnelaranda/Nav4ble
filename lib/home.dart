@@ -17,7 +17,9 @@ part 'screens/submissions_screen.dart';
 enum _ProfilePhotoAction { camera, gallery, remove }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.isGuest = false});
+
+  final bool isGuest;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -218,6 +220,14 @@ class _HomeScreenState extends State<HomeScreen> {
   void _useSavedPlace(SavedPlace place) {
     setState(() {
       _destinationController.text = place.name;
+      _selectedIndex = 0;
+    });
+    _planRoute();
+  }
+
+  void _navigateToPlace(String placeName) {
+    setState(() {
+      _destinationController.text = placeName;
       _selectedIndex = 0;
     });
     _planRoute();
@@ -925,8 +935,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final user = AuthService.currentUser;
-    final pages = [
+    final pages = <Widget>[
       _PlanPage(
+        isGuest: widget.isGuest,
         destinationController: _destinationController,
         routeStatus: _routeStatus,
         avoidStairs: _avoidStairs,
@@ -954,34 +965,39 @@ class _HomeScreenState extends State<HomeScreen> {
         onOpenSaved: _openSavedPlaces,
         onOpenFilters: _openAccessibilityFilters,
       ),
-      _ExplorePage(searchController: _exploreSearchController),
-      _ReportsPage(
-        reports: _reports,
-        onSubmitReport: _submitReport,
-        onOpenReport: _openReportDetails,
+      _ExplorePage(
+        searchController: _exploreSearchController,
+        onNavigate: _navigateToPlace,
       ),
-      _AlertsPage(reports: _reports, onOpenReport: _openReportDetails),
-      _ProfilePage(
-        user: user,
-        contributionPoints: 124,
-        reportCount: _submissions.length,
-        savedPlaceCount: _savedPlaces.length,
-        submissions: _submissions,
-        voiceGuidance: _voiceGuidance,
-        onVoiceGuidanceChanged: (value) =>
-            setState(() => _voiceGuidance = value),
-        onEditProfile: _editProfile,
-        onOpenInfo: _openInfoPage,
-        onSignOut: () {
-          AuthService.signOut();
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute<void>(
-              builder: (context) => const WelcomeScreen(),
-            ),
-            (route) => false,
-          );
-        },
-      ),
+      if (!widget.isGuest) ...[
+        _ReportsPage(
+          reports: _reports,
+          onSubmitReport: _submitReport,
+          onOpenReport: _openReportDetails,
+        ),
+        _AlertsPage(reports: _reports, onOpenReport: _openReportDetails),
+        _ProfilePage(
+          user: user,
+          contributionPoints: 124,
+          reportCount: _submissions.length,
+          savedPlaceCount: _savedPlaces.length,
+          submissions: _submissions,
+          voiceGuidance: _voiceGuidance,
+          onVoiceGuidanceChanged: (value) =>
+              setState(() => _voiceGuidance = value),
+          onEditProfile: _editProfile,
+          onOpenInfo: _openInfoPage,
+          onSignOut: () {
+            AuthService.signOut();
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute<void>(
+                builder: (context) => const WelcomeScreen(),
+              ),
+              (route) => false,
+            );
+          },
+        ),
+      ],
     ];
 
     final theme = Theme.of(context);
@@ -1000,11 +1016,22 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const SizedBox.shrink(),
         elevation: 0,
         actions: [
-          IconButton(
-            tooltip: 'Profile',
-            onPressed: () => setState(() => _selectedIndex = 4),
-            icon: const Icon(Icons.account_circle_outlined),
-          ),
+          if (widget.isGuest)
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).pushReplacement(
+                MaterialPageRoute<void>(
+                  builder: (context) => const LoginScreen(),
+                ),
+              ),
+              icon: const Icon(Icons.login_rounded, size: 18),
+              label: const Text('Sign in'),
+            )
+          else
+            IconButton(
+              tooltip: 'Profile',
+              onPressed: () => setState(() => _selectedIndex = 4),
+              icon: const Icon(Icons.account_circle_outlined),
+            ),
           const SizedBox(width: 8),
         ],
       ),
@@ -1016,32 +1043,34 @@ class _HomeScreenState extends State<HomeScreen> {
         indicatorColor: theme.brightness == Brightness.dark
             ? NavAblePalette.green.withValues(alpha: 0.2)
             : kNavAbleAccent,
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home_rounded),
             label: 'Home',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.explore_outlined),
             selectedIcon: Icon(Icons.explore_rounded),
             label: 'Explore',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.fact_check_outlined),
-            selectedIcon: Icon(Icons.fact_check_rounded),
-            label: 'Reports',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.notifications_none_rounded),
-            selectedIcon: Icon(Icons.notifications_rounded),
-            label: 'Alerts',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
-          ),
+          if (!widget.isGuest) ...[
+            const NavigationDestination(
+              icon: Icon(Icons.fact_check_outlined),
+              selectedIcon: Icon(Icons.fact_check_rounded),
+              label: 'Reports',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.notifications_none_rounded),
+              selectedIcon: Icon(Icons.notifications_rounded),
+              label: 'Alerts',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.person_outline_rounded),
+              selectedIcon: Icon(Icons.person_rounded),
+              label: 'Profile',
+            ),
+          ],
         ],
       ),
     );

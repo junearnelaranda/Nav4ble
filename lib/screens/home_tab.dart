@@ -2,6 +2,7 @@ part of '../home.dart';
 
 class _PlanPage extends StatelessWidget {
   const _PlanPage({
+    required this.isGuest,
     required this.destinationController,
     required this.routeStatus,
     required this.avoidStairs,
@@ -25,6 +26,7 @@ class _PlanPage extends StatelessWidget {
     required this.onOpenFilters,
   });
 
+  final bool isGuest;
   final TextEditingController destinationController;
   final String? routeStatus;
   final bool avoidStairs;
@@ -135,33 +137,35 @@ class _PlanPage extends StatelessWidget {
                   );
                 },
               ),
-              const SizedBox(height: 9),
-              _MapActionButton(
-                icon: Icons.bookmark_border_rounded,
-                tooltip: 'Saved places',
-                label: 'Saved',
-                onPressed: onOpenSaved,
-              ),
-              const SizedBox(height: 9),
-              _MapActionButton(
-                icon: Icons.campaign_outlined,
-                tooltip: 'Report a barrier',
-                label: 'Report',
-                onPressed: onReportBarrier,
-              ),
-              const SizedBox(height: 9),
-              _MapActionButton(
-                icon: Icons.qr_code_scanner_rounded,
-                tooltip: 'Scan accessibility code',
-                label: 'Scan',
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Accessibility scanner coming soon.'),
-                    ),
-                  );
-                },
-              ),
+              if (!isGuest) ...[
+                const SizedBox(height: 9),
+                _MapActionButton(
+                  icon: Icons.bookmark_border_rounded,
+                  tooltip: 'Saved places',
+                  label: 'Saved',
+                  onPressed: onOpenSaved,
+                ),
+                const SizedBox(height: 9),
+                _MapActionButton(
+                  icon: Icons.campaign_outlined,
+                  tooltip: 'Report a barrier',
+                  label: 'Report',
+                  onPressed: onReportBarrier,
+                ),
+                const SizedBox(height: 9),
+                _MapActionButton(
+                  icon: Icons.qr_code_scanner_rounded,
+                  tooltip: 'Scan accessibility code',
+                  label: 'Scan',
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Accessibility scanner coming soon.'),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ],
           ),
         ),
