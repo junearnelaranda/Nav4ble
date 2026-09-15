@@ -5,6 +5,9 @@ import 'auth_service.dart';
 import 'login.dart';
 import 'navable_design.dart';
 import 'welcome.dart';
+import 'widgets/navable_map.dart';
+import 'services/map_search_controller.dart';
+import 'services/navigation_service.dart';
 
 part 'screens/home_tab.dart';
 part 'screens/explore_tab.dart';
@@ -17,15 +20,22 @@ part 'screens/submissions_screen.dart';
 enum _ProfilePhotoAction { camera, gallery, remove }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.isGuest = false});
+  const HomeScreen({
+    super.key,
+    this.isGuest = false,
+    this.navigationService = const NavigationService(),
+  });
 
   final bool isGuest;
+  final NavigationService navigationService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _mapKey = GlobalKey<NavAbleMapState>();
+  final _mapSearch = MapSearchController();
   final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _exploreSearchController = TextEditingController(
     text: 'Cafe near Ayala Center Cebu',
@@ -33,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   bool _avoidStairs = true;
   bool _prioritizeElevators = false;
-  final bool _showVerifiedOnly = true;
+  bool _openingNavigation = false;
   bool _accessibleEntrance = false;
   bool _accessibleToilet = false;
   bool _tactilePaving = false;
@@ -164,28 +174,86 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _mapSearch.dispose();
     _destinationController.dispose();
     _exploreSearchController.dispose();
     super.dispose();
   }
 
-  void _planRoute() {
+  Future<void> _startNavigation() async {
+    if (_openingNavigation) return;
     final destination = _destinationController.text.trim();
+    if (destination.isEmpty) {
+      setState(
+        () => _routeStatus =
+            'Enter a destination or long-press the map to place a pin.',
+      );
+      return;
+    }
+    // Never reuse a previous search pin after the destination text changes.
+    final coordinates = _mapSearch.resultName == destination
+        ? _mapSearch.result
+        : null;
+    _openingNavigation = true;
+    FocusManager.instance.primaryFocus?.unfocus();
+    try {
+      final mode = await showDialog<TravelMode>(
+        context: context,
+        builder: (dialogContext) => SimpleDialog(
+          title: Text('Directions to $destination'),
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: Text(
+                'Choose how to travel in Google Maps. These routes are not verified as step-free, and NavAble accessibility filters are not applied.',
+              ),
+            ),
+            for (final option in const [
+              (TravelMode.walking, Icons.directions_walk, 'Walking'),
+              (TravelMode.driving, Icons.directions_car, 'Driving'),
+              (TravelMode.transit, Icons.directions_transit, 'Transit'),
+            ])
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(dialogContext).pop(option.$1),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(option.$2),
+                      const SizedBox(width: 16),
+                      Text(option.$3),
+                    ],
+                  ),
+                ),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || mode == null) return;
+      final opened = await widget.navigationService.open(
+        destination: destination,
+        coordinates: coordinates,
+        mode: mode,
+      );
+      if (!mounted) return;
+      setState(
+        () => _routeStatus = opened
+            ? 'Opened Google Maps for $destination.'
+            : 'Could not open directions. Install Google Maps or enable a browser and try again.',
+      );
+    } finally {
+      _openingNavigation = false;
+    }
+  }
 
-    setState(() {
-      if (destination.isEmpty) {
-        _routeStatus = 'Enter a destination to start routing.';
-        return;
-      }
-
-      final filters = <String>[
-        if (_avoidStairs) 'stairs avoided',
-        if (_prioritizeElevators) 'elevators prioritized',
-        if (_showVerifiedOnly) 'verified paths only',
-      ].join(', ');
-      _routeStatus =
-          'Route to $destination ready: 1.2 mi, 18 min, step-free. $filters.';
-    });
+  void _searchMap() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _routeStatus = null);
+    _mapSearch.search(_destinationController.text);
   }
 
   void _saveDestination() {
@@ -222,7 +290,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _destinationController.text = place.name;
       _selectedIndex = 0;
     });
-    _planRoute();
+    _startNavigation();
   }
 
   void _navigateToPlace(String placeName) {
@@ -230,31 +298,12 @@ class _HomeScreenState extends State<HomeScreen> {
       _destinationController.text = placeName;
       _selectedIndex = 0;
     });
-    _planRoute();
+    _startNavigation();
   }
 
   void _deleteSavedPlace(SavedPlace place) {
     setState(() => _savedPlaces.remove(place));
     _showMessage('${place.name} removed from saved places.');
-  }
-
-  void _openRouteDetails() {
-    if (_routeStatus == null) {
-      _showMessage('Plan a route first.');
-      return;
-    }
-
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) => RouteDetailsScreen(
-          destination: _destinationController.text.trim(),
-          status: _routeStatus!,
-          avoidStairs: _avoidStairs,
-          prioritizeElevators: _prioritizeElevators,
-          showVerifiedOnly: _showVerifiedOnly,
-        ),
-      ),
-    );
   }
 
   void _openReportDetails(AccessReport report) {
@@ -937,6 +986,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = AuthService.currentUser;
     final pages = <Widget>[
       _PlanPage(
+        mapKey: _mapKey,
+        mapSearch: _mapSearch,
+        onSearch: _searchMap,
         isGuest: widget.isGuest,
         destinationController: _destinationController,
         routeStatus: _routeStatus,
@@ -958,8 +1010,7 @@ class _HomeScreenState extends State<HomeScreen> {
             setState(() => _tactilePaving = value),
         onAudioAssistanceChanged: (value) =>
             setState(() => _audioAssistance = value),
-        onPlanRoute: _planRoute,
-        onOpenRouteDetails: _openRouteDetails,
+        onPlanRoute: _startNavigation,
         onSaveDestination: _saveDestination,
         onReportBarrier: _openReportSheet,
         onOpenSaved: _openSavedPlaces,
@@ -1258,98 +1309,6 @@ class InfoScreen extends StatelessWidget {
   }
 }
 
-class RouteDetailsScreen extends StatelessWidget {
-  const RouteDetailsScreen({
-    super.key,
-    required this.destination,
-    required this.status,
-    required this.avoidStairs,
-    required this.prioritizeElevators,
-    required this.showVerifiedOnly,
-  });
-
-  final String destination;
-  final String status;
-  final bool avoidStairs;
-  final bool prioritizeElevators;
-  final bool showVerifiedOnly;
-
-  @override
-  Widget build(BuildContext context) {
-    final steps = [
-      'Start from the nearest accessible entrance.',
-      if (avoidStairs) 'Continue using the marked step-free walkway.',
-      if (prioritizeElevators) 'Use the elevator bank near the main lobby.',
-      'Cross at the curb-cut crossing on the right.',
-      if (showVerifiedOnly) 'Follow the peer-verified ramp access segment.',
-      'Arrive at $destination through the accessible entrance.',
-    ];
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7FAF8),
-      appBar: AppBar(
-        title: const Text('Route Details'),
-        backgroundColor: Colors.white,
-        foregroundColor: kNavAbleNavy,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    destination.isEmpty ? 'Accessible Route' : destination,
-                    style: const TextStyle(
-                      color: kNavAbleNavy,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    status,
-                    style: const TextStyle(
-                      color: kNavAbleText,
-                      fontSize: 14,
-                      height: 1.45,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Step-Free Directions',
-                    style: TextStyle(
-                      color: kNavAbleNavy,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  for (var index = 0; index < steps.length; index++)
-                    _InstructionStep(number: index + 1, text: steps[index]),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class ReportDetailsScreen extends StatefulWidget {
   const ReportDetailsScreen({
     super.key,
@@ -1585,50 +1544,6 @@ class _SavedPlaceDetailsScreenState extends State<SavedPlaceDetailsScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _InstructionStep extends StatelessWidget {
-  const _InstructionStep({required this.number, required this.text});
-
-  final int number;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: kNavAbleAccent,
-            child: Text(
-              '$number',
-              style: const TextStyle(
-                color: kNavAbleNavy,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                color: kNavAbleText,
-                fontSize: 14,
-                height: 1.45,
-                letterSpacing: 0,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

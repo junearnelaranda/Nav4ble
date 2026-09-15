@@ -4,8 +4,59 @@ import 'package:navable/home.dart';
 import 'package:navable/main.dart';
 import 'package:navable/login.dart';
 import 'package:navable/register.dart';
+import 'package:navable/widgets/navable_map.dart';
+import 'package:navable/services/navigation_service.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 void main() {
+  testWidgets('navigation opens the chosen mode for the typed destination', (
+    tester,
+  ) async {
+    Uri? opened;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          navigationService: NavigationService(
+            launcher: (uri) async {
+              opened = uri;
+              return true;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    tester
+        .widget<NavAbleMap>(find.byType(NavAbleMap))
+        .searchController!
+        .selectLocation(const LatLng(20, 120), name: 'Old destination');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Where would you like to go?'),
+      'Guadalupe Church, Cebu City',
+    );
+    await tester.tap(find.text('Start Navigation'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Walking'));
+    await tester.pumpAndSettle();
+    expect(
+      opened?.queryParameters['destination'],
+      'Guadalupe Church, Cebu City',
+    );
+    expect(opened?.queryParameters['travelmode'], 'walking');
+    expect(find.textContaining('Opened Google Maps'), findsOneWidget);
+  });
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          NavAbleMapState.configChannel,
+          (_) async => false,
+        );
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(NavAbleMapState.configChannel, null);
+  });
   testWidgets('guest can search, inspect accessibility, and navigate', (
     WidgetTester tester,
   ) async {
@@ -18,9 +69,7 @@ void main() {
 
     expect(find.text('Continue as a Guest'), findsOneWidget);
     expect(
-      find.text(
-        'Search  →  View place  →  Check accessibility  →  Navigate',
-      ),
+      find.text('Search  →  View place  →  Check accessibility  →  Navigate'),
       findsOneWidget,
     );
 
@@ -49,7 +98,10 @@ void main() {
 
     await tester.tap(find.text('Navigate'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Route to Figaro Coffee ready'), findsOneWidget);
+    expect(find.text('Directions to Figaro Coffee'), findsOneWidget);
+    expect(find.text('Walking'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('opens welcome, login, and home flow', (
@@ -89,7 +141,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1900));
     await tester.pumpAndSettle();
 
-    expect(find.text('Nearby Accessible Places'), findsOneWidget);
+    expect(find.text('Demo Accessible Places'), findsOneWidget);
     expect(find.text('Start Navigation'), findsOneWidget);
 
     await tester.enterText(
@@ -99,14 +151,11 @@ void main() {
     await tester.tap(find.text('Start Navigation'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Route to Museum ready'), findsOneWidget);
-    await tester.tap(find.text('View Route Details'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Route Details'), findsOneWidget);
-    expect(find.text('Step-Free Directions'), findsOneWidget);
-
-    await tester.pageBack();
+    expect(find.text('Directions to Museum'), findsOneWidget);
+    expect(find.text('Walking'), findsOneWidget);
+    expect(find.text('Driving'), findsOneWidget);
+    expect(find.text('Transit'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Reports'));
@@ -245,14 +294,34 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1900));
     await tester.pumpAndSettle();
 
-    expect(find.text('Nearby Accessible Places'), findsOneWidget);
+    expect(find.text('Demo Accessible Places'), findsOneWidget);
     await tester.tap(find.text('Profile'));
     await tester.pumpAndSettle();
     expect(find.text('Alex Rider'), findsOneWidget);
     expect(find.text('alex.rider@example.com'), findsOneWidget);
   });
 
-  testWidgets('home map placeholder fits a phone viewport', (
+  testWidgets(
+    'map search button and keyboard submit show empty search feedback',
+    (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: HomeScreen()));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Search map'));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a place or area to search.'), findsOneWidget);
+      final search = find.widgetWithText(
+        TextField,
+        'Where would you like to go?',
+      );
+      await tester.tap(search);
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a place or area to search.'), findsOneWidget);
+      expect(find.textContaining('Demo route to'), findsNothing);
+    },
+  );
+
+  testWidgets('home map layout fits a phone viewport', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -264,7 +333,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Where would you like to go?'), findsOneWidget);
-    expect(find.text('Nearby Accessible Places'), findsOneWidget);
+    expect(find.text('Demo Accessible Places'), findsOneWidget);
     expect(find.text('Start Navigation'), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Explore'), findsOneWidget);

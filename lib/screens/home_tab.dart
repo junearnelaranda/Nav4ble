@@ -2,6 +2,9 @@ part of '../home.dart';
 
 class _PlanPage extends StatelessWidget {
   const _PlanPage({
+    required this.mapKey,
+    required this.mapSearch,
+    required this.onSearch,
     required this.isGuest,
     required this.destinationController,
     required this.routeStatus,
@@ -19,7 +22,6 @@ class _PlanPage extends StatelessWidget {
     required this.onTactilePavingChanged,
     required this.onAudioAssistanceChanged,
     required this.onPlanRoute,
-    required this.onOpenRouteDetails,
     required this.onSaveDestination,
     required this.onReportBarrier,
     required this.onOpenSaved,
@@ -27,6 +29,9 @@ class _PlanPage extends StatelessWidget {
   });
 
   final bool isGuest;
+  final GlobalKey<NavAbleMapState> mapKey;
+  final MapSearchController mapSearch;
+  final VoidCallback onSearch;
   final TextEditingController destinationController;
   final String? routeStatus;
   final bool avoidStairs;
@@ -43,7 +48,6 @@ class _PlanPage extends StatelessWidget {
   final ValueChanged<bool> onTactilePavingChanged;
   final ValueChanged<bool> onAudioAssistanceChanged;
   final VoidCallback onPlanRoute;
-  final VoidCallback onOpenRouteDetails;
   final VoidCallback onSaveDestination;
   final VoidCallback onReportBarrier;
   final VoidCallback onOpenSaved;
@@ -53,7 +57,17 @@ class _PlanPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        const Positioned.fill(child: _LightMapPlaceholder()),
+        Positioned.fill(
+          child: NavAbleMap(
+            key: mapKey,
+            searchController: mapSearch,
+            onDestinationSelected: (name) => destinationController.text = name,
+            padding: EdgeInsets.only(
+              top: 190,
+              bottom: routeStatus == null ? 160 : 240,
+            ),
+          ),
+        ),
         Positioned(
           left: 14,
           right: 14,
@@ -62,10 +76,50 @@ class _PlanPage extends StatelessWidget {
             children: [
               _HomeSearchBar(
                 controller: destinationController,
-                onSubmitted: (_) => onPlanRoute(),
+                onSubmitted: (_) => onSearch(),
                 onFilterPressed: onOpenFilters,
               ),
               const SizedBox(height: 10),
+              ListenableBuilder(
+                listenable: mapSearch,
+                builder: (context, _) => mapSearch.message == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Material(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(10),
+                            child: Row(
+                              children: [
+                                if (mapSearch.isSearching) ...[
+                                  const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                Expanded(
+                                  child: Semantics(
+                                    liveRegion: true,
+                                    child: Text(
+                                      mapSearch.message!,
+                                      style: const TextStyle(
+                                        color: kNavAbleNavy,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
               SizedBox(
                 height: 38,
                 child: SingleChildScrollView(
@@ -121,7 +175,6 @@ class _PlanPage extends StatelessWidget {
             ],
           ),
         ),
-        const Center(child: _CurrentLocationMarker()),
         Positioned(
           right: 12,
           bottom: routeStatus == null ? 88 : 178,
@@ -131,11 +184,7 @@ class _PlanPage extends StatelessWidget {
               _MapActionButton(
                 icon: Icons.my_location_rounded,
                 tooltip: 'My location',
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Location preview centered.')),
-                  );
-                },
+                onPressed: () => mapKey.currentState?.centerOnUser(),
               ),
               if (!isGuest) ...[
                 const SizedBox(height: 9),
@@ -197,11 +246,6 @@ class _PlanPage extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (!routeStatus!.startsWith('Enter'))
-                          TextButton(
-                            onPressed: onOpenRouteDetails,
-                            child: const Text('View Route Details'),
-                          ),
                       ],
                     ),
                   ),
@@ -220,7 +264,7 @@ class _PlanPage extends StatelessWidget {
                     ),
                     SizedBox(width: 6),
                     Text(
-                      'Nearby Accessible Places',
+                      'Demo Accessible Places',
                       style: TextStyle(
                         color: kNavAbleNavy,
                         fontSize: 12,
@@ -287,10 +331,14 @@ class _HomeSearchBar extends StatelessWidget {
           decoration: InputDecoration(
             hintText: 'Where would you like to go?',
             hintStyle: const TextStyle(color: Color(0xFF667085), fontSize: 12),
-            prefixIcon: const Icon(
-              Icons.search_rounded,
-              color: Color(0xFF475467),
-              size: 20,
+            prefixIcon: IconButton(
+              tooltip: 'Search map',
+              onPressed: () => onSubmitted(controller.text),
+              icon: const Icon(
+                Icons.search_rounded,
+                color: Color(0xFF475467),
+                size: 20,
+              ),
             ),
             prefixIconConstraints: const BoxConstraints.tightFor(
               width: 44,
@@ -436,86 +484,6 @@ class _FilterOptionTile extends StatelessWidget {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LightMapPlaceholder extends StatelessWidget {
-  const _LightMapPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Color(0xFFE8ECEF),
-      child: CustomPaint(painter: _LightMapPainter()),
-    );
-  }
-}
-
-class _LightMapPainter extends CustomPainter {
-  const _LightMapPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final minorRoad = Paint()
-      ..color = const Color(0xFFF4F6F7)
-      ..strokeWidth = 8
-      ..strokeCap = StrokeCap.round;
-    final majorRoad = Paint()
-      ..color = const Color(0xFFFAFBFC)
-      ..strokeWidth = 15
-      ..strokeCap = StrokeCap.round;
-    final roadEdge = Paint()
-      ..color = const Color(0xFFD8DEE3)
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
-
-    final roads = <List<Offset>>[
-      [
-        Offset(-20, size.height * 0.24),
-        Offset(size.width + 30, size.height * 0.7),
-      ],
-      [Offset(size.width * 0.1, size.height), Offset(size.width * 0.68, -20)],
-      [Offset(-10, size.height * 0.68), Offset(size.width, size.height * 0.28)],
-      [Offset(size.width * 0.35, size.height), Offset(size.width * 0.2, -10)],
-      [Offset(size.width * 0.72, size.height), Offset(size.width * 0.9, -10)],
-    ];
-
-    for (var index = 0; index < roads.length; index++) {
-      final road = roads[index];
-      canvas.drawLine(road.first, road.last, index < 2 ? majorRoad : minorRoad);
-      canvas.drawLine(road.first, road.last, roadEdge);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _LightMapPainter oldDelegate) => false;
-}
-
-class _CurrentLocationMarker extends StatelessWidget {
-  const _CurrentLocationMarker();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 34,
-      height: 34,
-      decoration: BoxDecoration(
-        color: kNavAbleGreen.withValues(alpha: 0.2),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Container(
-        width: 20,
-        height: 20,
-        decoration: const BoxDecoration(
-          color: Color(0xFF07883D),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(color: Colors.white, spreadRadius: 3, blurRadius: 1),
-          ],
         ),
       ),
     );

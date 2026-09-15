@@ -1,8 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+val mapsProperties = Properties().apply {
+    val propertiesFile = rootProject.file("local.properties")
+    if (propertiesFile.exists()) propertiesFile.inputStream().use { load(it) }
+}
+val mapsApiKey = (mapsProperties.getProperty("MAPS_API_KEY")
+    ?: System.getenv("MAPS_API_KEY") ?: "").trim()
 
 android {
     namespace = "com.example.navable"
@@ -19,7 +28,8 @@ android {
         applicationId = "com.example.navable"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = maxOf(flutter.minSdkVersion, 24)
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
