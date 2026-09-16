@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "769254468648",
+    "project_id": "nav4ble-22f2d",
+    "storage_bucket": "nav4ble-22f2d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:769254468648:android:6059c247a1e7e26114991d",
+        "android_client_info": {
+          "package_name": "com.example.navable"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbiR0-GKUYmgwtOoqhPDQk5G8Ukt8cpUQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
