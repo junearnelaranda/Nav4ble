@@ -59,23 +59,29 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  void _login() {
-    final result = AuthService.login(
-      email: _emailController.text,
-      password: _passwordController.text,
+Future<void> _login() async {
+  FocusManager.instance.primaryFocus?.unfocus();
+
+  final result = await AuthService.login(
+    email: _emailController.text,
+    password: _passwordController.text,
+  );
+
+  if (!mounted) return;
+
+  if (!result.isSuccess) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message ?? 'Login failed.'),
+      ),
     );
-
-    if (!result.isSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message ?? 'Login failed.')),
-      );
-      return;
-    }
-
-    Navigator.of(
-      context,
-    ).pushReplacement(_fadeRoute(const SplashScreen(nextScreen: HomeScreen())));
+    return;
   }
+
+  Navigator.of(context).pushReplacement(
+    _fadeRoute(const SplashScreen(nextScreen: HomeScreen())),
+  );
+}
 
   void _showProviderPlaceholder(String provider) {
     ScaffoldMessenger.of(context).showSnackBar(

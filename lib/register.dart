@@ -59,34 +59,39 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
-  void _register() {
-    FocusManager.instance.primaryFocus?.unfocus();
+  Future<void> _register() async {
+  FocusManager.instance.primaryFocus?.unfocus();
 
-    final isFormValid = _formKey.currentState?.validate() ?? false;
-    setState(() => _showTermsError = !_acceptedTerms);
-    if (!isFormValid || !_acceptedTerms) {
-      return;
-    }
+  final isFormValid = _formKey.currentState?.validate() ?? false;
+  setState(() => _showTermsError = !_acceptedTerms);
 
-    final result = AuthService.register(
-      fullName: _nameController.text,
-      email: _emailController.text,
-      password: _passwordController.text,
-      confirmPassword: _confirmPasswordController.text,
-    );
-
-    if (!result.isSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message ?? 'Sign up failed.')),
-      );
-      return;
-    }
-
-    Navigator.of(context).pushAndRemoveUntil(
-      _fadeRoute(const SplashScreen(nextScreen: HomeScreen())),
-      (route) => false,
-    );
+  if (!isFormValid || !_acceptedTerms) {
+    return;
   }
+
+  final result = await AuthService.register(
+    fullName: _nameController.text,
+    email: _emailController.text,
+    password: _passwordController.text,
+    confirmPassword: _confirmPasswordController.text,
+  );
+
+  if (!mounted) return;
+
+  if (!result.isSuccess) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message ?? 'Sign up failed.'),
+      ),
+    );
+    return;
+  }
+
+  Navigator.of(context).pushAndRemoveUntil(
+    _fadeRoute(const SplashScreen(nextScreen: HomeScreen())),
+    (route) => false,
+  );
+}
 
   void _showGooglePlaceholder() {
     ScaffoldMessenger.of(context).showSnackBar(

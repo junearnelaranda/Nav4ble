@@ -603,8 +603,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: double.infinity,
                     height: NavAbleSize.primaryButton,
                     child: FilledButton.icon(
-                      onPressed: () {
-                        final result = AuthService.updateProfile(
+                      onPressed: () async {
+                        final result = await AuthService.updateProfile(
                           fullName: nameController.text,
                           email: emailController.text,
                           profileImageBytes: selectedPhoto,
