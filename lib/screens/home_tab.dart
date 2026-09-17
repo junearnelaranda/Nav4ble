@@ -4,6 +4,7 @@ class _PlanPage extends StatelessWidget {
   const _PlanPage({
     required this.mapKey,
     required this.mapSearch,
+    required this.locations,
     required this.onSearch,
     required this.isGuest,
     required this.destinationController,
@@ -31,6 +32,7 @@ class _PlanPage extends StatelessWidget {
   final bool isGuest;
   final GlobalKey<NavAbleMapState> mapKey;
   final MapSearchController mapSearch;
+  final Stream<QuerySnapshot<Map<String, dynamic>>> locations;
   final VoidCallback onSearch;
   final TextEditingController destinationController;
   final String? routeStatus;
@@ -284,7 +286,42 @@ class _PlanPage extends StatelessWidget {
                       alignment: Alignment.centerLeft,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 300),
-                        child: _NearbyPlaceCard(onSave: onSaveDestination),
+                        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+  stream: locations,
+  builder: (context, snapshot) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    if (snapshot.hasError) {
+      return const Text('Unable to load locations.');
+    }
+
+    final locationsData = snapshot.data?.docs ?? [];
+
+    if (locationsData.isEmpty) {
+      return const Text('No accessible locations found.');
+    }
+
+return Column(
+  children: locationsData.map((doc) {
+    final location = doc.data();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: _NearbyPlaceCard(
+        name: location['name'] as String? ?? 'Unknown location',
+        transport: location['transport'] as String? ?? '',
+        onSave: onSaveDestination,
+      ),
+    );
+  }).toList(),
+);
+
+  },
+),
                       ),
                     ),
                   ),
@@ -543,8 +580,15 @@ class _MapActionButton extends StatelessWidget {
 }
 
 class _NearbyPlaceCard extends StatelessWidget {
-  const _NearbyPlaceCard({required this.onSave});
 
+  const _NearbyPlaceCard({
+    required this.name,
+    required this.transport,
+    required this.onSave,
+  });
+
+  final String name;
+  final String transport;
   final VoidCallback onSave;
 
   @override
@@ -556,12 +600,12 @@ class _NearbyPlaceCard extends StatelessWidget {
       borderRadius: 12,
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Ayala Central Bloc',
+                  name,
                   style: TextStyle(
                     color: kNavAbleNavy,
                     fontSize: 12,
@@ -570,7 +614,7 @@ class _NearbyPlaceCard extends StatelessWidget {
                 ),
                 SizedBox(height: 2),
                 Text(
-                  '0.7 miles • Transit',
+                 transport,
                   style: TextStyle(color: kNavAbleText, fontSize: 10),
                 ),
                 SizedBox(height: 5),

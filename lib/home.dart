@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'auth_service.dart';
 import 'login.dart';
@@ -34,12 +35,18 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final CollectionReference<Map<String, dynamic>> _locations =
+      FirebaseFirestore.instance.collection('locations');
+
   final _mapKey = GlobalKey<NavAbleMapState>();
   final _mapSearch = MapSearchController();
-  final TextEditingController _destinationController = TextEditingController();
-  final TextEditingController _exploreSearchController = TextEditingController(
+  final TextEditingController _destinationController =
+      TextEditingController();
+  final TextEditingController _exploreSearchController =
+      TextEditingController(
     text: 'Cafe near Ayala Center Cebu',
   );
+
   int _selectedIndex = 0;
   bool _avoidStairs = true;
   bool _prioritizeElevators = false;
@@ -981,6 +988,10 @@ class _HomeScreenState extends State<HomeScreen> {
     };
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> _locationStream() {
+  return _locations.snapshots();
+}
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService.currentUser;
@@ -988,6 +999,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _PlanPage(
         mapKey: _mapKey,
         mapSearch: _mapSearch,
+        locations: _locationStream(),
         onSearch: _searchMap,
         isGuest: widget.isGuest,
         destinationController: _destinationController,
