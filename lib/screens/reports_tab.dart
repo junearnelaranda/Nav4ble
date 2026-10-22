@@ -3,12 +3,22 @@ part of '../home.dart';
 class _ReportsPage extends StatefulWidget {
   const _ReportsPage({
     required this.reports,
+    required this.locations,
+    required this.initialLocation,
+    required this.photoCaptureRequestId,
+    required this.onPhotoCaptureRequestHandled,
+    required this.onAnalyzePhotos,
     required this.onSubmitReport,
     required this.onOpenReport,
   });
 
   final List<AccessReport> reports;
-  final ValueChanged<AccessReport> onSubmitReport;
+  final List<AccessibleLocation> locations;
+  final AccessibleLocation? initialLocation;
+  final int photoCaptureRequestId;
+  final VoidCallback onPhotoCaptureRequestHandled;
+  final Future<PhotoAnalysis> Function(List<Uint8List>) onAnalyzePhotos;
+  final Future<bool> Function(AccessReport, PhotoAnalysis) onSubmitReport;
   final ValueChanged<AccessReport> onOpenReport;
 
   @override
@@ -16,27 +26,54 @@ class _ReportsPage extends StatefulWidget {
 }
 
 class _ReportsPageState extends State<_ReportsPage> {
-  final TextEditingController _locationController = TextEditingController(
-    text: 'Siquijor Rd, Cebu City, 6000 Cebu',
+  late final TextEditingController _locationController = TextEditingController(
+    text: widget.initialLocation == null
+        ? ''
+        : '${widget.initialLocation!.latitude.toStringAsFixed(6)}, ${widget.initialLocation!.longitude.toStringAsFixed(6)}',
+  );
+  late final TextEditingController _placeNameController = TextEditingController(
+    text: widget.initialLocation?.name ?? '',
   );
   final TextEditingController _descriptionController = TextEditingController();
   String? _category;
-  String? _photoSource;
+  final List<Uint8List> _selectedPhotos = [];
+  PhotoAnalysis? _photoAnalysis;
+  ImageSource? _lastPhotoSource;
+  bool _isPickingPhoto = false;
+  bool _isAnalyzingPhotos = false;
+  bool _isSubmitting = false;
+  String? _selectedLocationId;
+
+  static const _maxPhotos = 5;
 
   static const _categories = <String>[
-    'Blocked pathway',
-    'Broken or missing ramp',
-    'Elevator unavailable',
-    'Inaccessible entrance',
-    'Accessible toilet issue',
-    'Missing tactile paving',
-    'Audio assistance issue',
-    'Other accessibility issue',
+    'Accessible ramp',
+    'Elevator access',
+    'Step-free entrance',
+    'Accessible toilet',
+    'Tactile paving',
+    'Audio assistance',
+    'Wheelchair parking',
+    'Accessibility issue',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedLocationId = widget.initialLocation?.id;
+    if (widget.photoCaptureRequestId > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onPhotoCaptureRequestHandled();
+        _choosePhoto(ImageSource.camera);
+      });
+    }
+  }
 
   @override
   void dispose() {
     _locationController.dispose();
+    _placeNameController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
@@ -52,39 +89,149 @@ class _ReportsPageState extends State<_ReportsPage> {
     return Icons.warning_amber_rounded;
   }
 
-  void _choosePhoto(String source) {
-    setState(() => _photoSource = source);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$source selected for this local prototype.')),
-    );
+  Future<void> _choosePhoto(ImageSource source) async {
+    if (_isPickingPhoto || _isAnalyzingPhotos || _isSubmitting) return;
+    setState(() => _isPickingPhoto = true);
+    try {
+      final photo = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 60,
+        maxWidth: 1024,
+      );
+      if (!mounted || photo == null) return;
+      final photoBytes = await photo.readAsBytes();
+      if (!mounted) return;
+      if (photoBytes.lengthInBytes > ReportsApi.maxPhotoBytes) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This photo is over 700 KiB. Choose a smaller photo and try again.',
+            ),
+          ),
+        );
+        return;
+      }
+      if (_selectedPhotos.length >= _maxPhotos) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You can attach up to 5 photos.')),
+        );
+        return;
+      }
+      setState(() {
+        _selectedPhotos.add(photoBytes);
+        _photoAnalysis = null;
+        _lastPhotoSource = source;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open the selected photo source.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isPickingPhoto = false);
+    }
   }
 
-  void _submit() {
+  Future<void> _scanPhotos() async {
+    if (_isAnalyzingPhotos || _selectedPhotos.isEmpty) return;
+    setState(() {
+      _isAnalyzingPhotos = true;
+      _photoAnalysis = null;
+    });
+    try {
+      final result = await widget.onAnalyzePhotos(
+        List<Uint8List>.unmodifiable(_selectedPhotos),
+      );
+      if (!mounted) return;
+      setState(() => _photoAnalysis = result);
+      if (result.message != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result.message!)));
+      }
+    } on ReportsApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _photoAnalysis = PhotoAnalysis.failedFor(
+          _selectedPhotos.length,
+          message: error.message,
+        );
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      if (!mounted) return;
+      const message =
+          'Photo scanning is unavailable. You can still submit for review.';
+      setState(() {
+        _photoAnalysis = PhotoAnalysis.failedFor(
+          _selectedPhotos.length,
+          message: message,
+        );
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _isAnalyzingPhotos = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
     FocusManager.instance.primaryFocus?.unfocus();
     final location = _locationController.text.trim();
     final description = _descriptionController.text.trim();
 
-    if (location.isEmpty || _category == null || description.isEmpty) {
+    if (location.isEmpty ||
+        _category == null ||
+        description.isEmpty ||
+        _selectedPhotos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Add the location, issue category, and description.'),
+          content: Text(
+            'Pin the location, add a category and description, and attach at least one photo.',
+          ),
         ),
       );
       return;
     }
+    final analysis = _photoAnalysis;
+    if (analysis == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Scan the photos before submitting.')),
+      );
+      return;
+    }
 
-    widget.onSubmitReport(
+    setState(() => _isSubmitting = true);
+    final submitted = await widget.onSubmitReport(
       AccessReport(
-        title: location,
+        title: _placeNameController.text.trim().isEmpty
+            ? 'Accessibility location'
+            : _placeNameController.text.trim(),
+        locationId: _selectedLocationId,
+        location: location,
         detail: description,
         category: _category!,
         icon: _selectedCategoryIcon,
+        photoBytes: List<Uint8List>.of(_selectedPhotos),
       ),
+      analysis,
     );
+    if (!mounted) return;
     setState(() {
-      _category = null;
-      _photoSource = null;
-      _descriptionController.clear();
+      _isSubmitting = false;
+      if (submitted) {
+        _category = null;
+        _selectedPhotos.clear();
+        _photoAnalysis = null;
+        _lastPhotoSource = null;
+        _descriptionController.clear();
+      }
     });
   }
 
@@ -99,35 +246,79 @@ class _ReportsPageState extends State<_ReportsPage> {
         NavAbleSpacing.xxl,
       ),
       children: [
-        const Text(
-          'Report an Issue',
+        Text(
+          'Submit Accessibility Photos',
           style: TextStyle(
-            color: kNavAbleNavy,
+            color: context.navAblePrimaryText,
             fontSize: 24,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.2,
           ),
         ),
         const SizedBox(height: NavAbleSpacing.xs),
-        const Text(
-          'Your reports help make the city more accessible for everyone.',
-          style: TextStyle(color: kNavAbleText, fontSize: 14, height: 1.4),
+        Text(
+          'Share photo evidence of an accessible feature or a barrier. AI suggestions are reviewed by a person.',
+          style: TextStyle(
+            color: context.navAbleSecondaryText,
+            fontSize: 14,
+            height: 1.4,
+          ),
         ),
         const SizedBox(height: NavAbleSpacing.lg),
         _ReportFormCard(
           icon: Icons.location_on_outlined,
-          title: 'Issue Location',
+          title: 'Accessible Location',
           child: Column(
             children: [
-              const _ReportMapPlaceholder(),
+              _ReportMapPlaceholder(
+                initialLocation: widget.initialLocation,
+                locations: widget.locations,
+                onLocationSelected: (position) {
+                  setState(() {
+                    _locationController.text =
+                        '${position.latitude.toStringAsFixed(6)}, '
+                        '${position.longitude.toStringAsFixed(6)}';
+                    _selectedLocationId = null;
+                  });
+                },
+                onAccessibleLocationSelected: (location) {
+                  setState(() {
+                    _selectedLocationId = location.id;
+                    _placeNameController.text = location.name;
+                    _locationController.text =
+                        '${location.latitude.toStringAsFixed(6)}, '
+                        '${location.longitude.toStringAsFixed(6)}';
+                  });
+                },
+              ),
+              const SizedBox(height: NavAbleSpacing.sm),
+              SizedBox(
+                height: NavAbleSize.compactControl,
+                child: TextField(
+                  controller: _placeNameController,
+                  onChanged: (value) {
+                    if (widget.initialLocation?.name != value.trim()) {
+                      setState(() => _selectedLocationId = null);
+                    }
+                  },
+                  style: TextStyle(fontSize: 13),
+                  decoration: _reportFieldDecoration(
+                    context,
+                    hintText: 'Place or establishment name',
+                    icon: Icons.storefront_outlined,
+                  ),
+                ),
+              ),
               const SizedBox(height: NavAbleSpacing.sm),
               SizedBox(
                 height: NavAbleSize.compactControl,
                 child: TextField(
                   controller: _locationController,
-                  style: const TextStyle(fontSize: 13),
+                  onChanged: (_) => setState(() => _selectedLocationId = null),
+                  style: TextStyle(fontSize: 13),
                   decoration: _reportFieldDecoration(
-                    hintText: 'Add the issue location',
+                    context,
+                    hintText: 'Tap the map to pin the exact location',
                     icon: Icons.my_location_rounded,
                   ),
                 ),
@@ -145,8 +336,9 @@ class _ReportsPageState extends State<_ReportsPage> {
               key: ValueKey(_category),
               initialValue: _category,
               isExpanded: true,
-              hint: const Text('Select issue type...'),
+              hint: Text('Select issue type...'),
               decoration: _reportFieldDecoration(
+                context,
                 hintText: 'Select issue type...',
               ),
               items: [
@@ -167,6 +359,7 @@ class _ReportsPageState extends State<_ReportsPage> {
             maxLines: 5,
             textCapitalization: TextCapitalization.sentences,
             decoration: _reportFieldDecoration(
+              context,
               hintText: 'Provide details about the accessibility problem...',
             ),
           ),
@@ -175,25 +368,127 @@ class _ReportsPageState extends State<_ReportsPage> {
         _ReportFormCard(
           icon: Icons.add_a_photo_outlined,
           title: 'Add Photos',
-          child: Row(
+          child: Column(
             children: [
-              Expanded(
-                child: _PhotoSourceButton(
-                  icon: Icons.photo_camera_outlined,
-                  label: 'Take Photo',
-                  selected: _photoSource == 'Camera',
-                  onTap: () => _choosePhoto('Camera'),
+              if (_selectedPhotos.isNotEmpty) ...[
+                SizedBox(
+                  height: 112,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _selectedPhotos.length,
+                    separatorBuilder: (_, _) =>
+                        const SizedBox(width: NavAbleSpacing.sm),
+                    itemBuilder: (context, index) {
+                      final photo = _selectedPhotos[index];
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                          NavAbleRadius.small,
+                        ),
+                        child: Stack(
+                          children: [
+                            Image.memory(
+                              photo,
+                              width: 112,
+                              height: 112,
+                              fit: BoxFit.cover,
+                              semanticLabel:
+                                  'Accessibility report photo ${index + 1}',
+                            ),
+                            Positioned(
+                              top: 2,
+                              right: 2,
+                              child: IconButton.filledTonal(
+                                tooltip: 'Remove photo ${index + 1}',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: _isAnalyzingPhotos || _isSubmitting
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _selectedPhotos.removeAt(index);
+                                          _photoAnalysis = null;
+                                        });
+                                      },
+                                icon: Icon(Icons.close_rounded, size: 18),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: NavAbleSpacing.sm),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: _PhotoSourceButton(
+                      icon: Icons.photo_camera_outlined,
+                      label: 'Take Photo',
+                      selected: _lastPhotoSource == ImageSource.camera,
+                      onTap:
+                          _isPickingPhoto ||
+                              _isAnalyzingPhotos ||
+                              _isSubmitting ||
+                              _selectedPhotos.length >= _maxPhotos
+                          ? null
+                          : () => _choosePhoto(ImageSource.camera),
+                    ),
+                  ),
+                  const SizedBox(width: NavAbleSpacing.sm),
+                  Expanded(
+                    child: _PhotoSourceButton(
+                      icon: Icons.photo_library_outlined,
+                      label: 'From Gallery',
+                      selected: _lastPhotoSource == ImageSource.gallery,
+                      onTap:
+                          _isPickingPhoto ||
+                              _isAnalyzingPhotos ||
+                              _isSubmitting ||
+                              _selectedPhotos.length >= _maxPhotos
+                          ? null
+                          : () => _choosePhoto(ImageSource.gallery),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: NavAbleSpacing.sm),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed:
+                      _selectedPhotos.isEmpty ||
+                          _isPickingPhoto ||
+                          _isAnalyzingPhotos
+                      ? null
+                      : _scanPhotos,
+                  icon: _isAnalyzingPhotos
+                      ? const SizedBox.square(
+                          dimension: 17,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(Icons.document_scanner_outlined),
+                  label: Text(
+                    _isAnalyzingPhotos
+                        ? 'Scanning photos…'
+                        : _photoAnalysis == null
+                        ? 'Scan Photos with AI'
+                        : 'Scan Again',
+                  ),
                 ),
               ),
-              const SizedBox(width: NavAbleSpacing.sm),
-              Expanded(
-                child: _PhotoSourceButton(
-                  icon: Icons.photo_library_outlined,
-                  label: 'From Gallery',
-                  selected: _photoSource == 'Gallery',
-                  onTap: () => _choosePhoto('Gallery'),
-                ),
-              ),
+              if (_isAnalyzingPhotos) ...[
+                const SizedBox(height: NavAbleSpacing.xs),
+                const LinearProgressIndicator(),
+              ],
+              if (_photoAnalysis case final analysis?) ...[
+                const SizedBox(height: NavAbleSpacing.sm),
+                _PhotoAnalysisCard(analysis: analysis),
+              ],
+              if (_isPickingPhoto) ...[
+                const SizedBox(height: NavAbleSpacing.sm),
+                const LinearProgressIndicator(),
+              ],
             ],
           ),
         ),
@@ -201,33 +496,41 @@ class _ReportsPageState extends State<_ReportsPage> {
         SizedBox(
           width: double.infinity,
           height: NavAbleSize.primaryButton,
-          child: FilledButton.icon(
-            onPressed: _submit,
-            iconAlignment: IconAlignment.end,
-            icon: const Icon(Icons.arrow_forward_rounded, size: 20),
-            label: const Text('Submit Report'),
+          child: FilledButton(
+            onPressed:
+                _isSubmitting || _isAnalyzingPhotos || _photoAnalysis == null
+                ? null
+                : _submit,
+            child: Text(_isSubmitting ? 'Submitting…' : 'Submit for Review'),
           ),
         ),
         const SizedBox(height: NavAbleSpacing.sm),
-        const Row(
+        Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.verified_user_outlined, size: 14, color: kNavAbleText),
+            Icon(
+              Icons.verified_user_outlined,
+              size: 14,
+              color: context.navAbleSecondaryText,
+            ),
             SizedBox(width: 6),
             Flexible(
               child: Text(
                 'Reports are verified by the community within 24 hours.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: kNavAbleText, fontSize: 11),
+                style: TextStyle(
+                  color: context.navAbleSecondaryText,
+                  fontSize: 11,
+                ),
               ),
             ),
           ],
         ),
         const SizedBox(height: NavAbleSpacing.xxl),
-        const Text(
+        Text(
           'Accessibility Reports',
           style: TextStyle(
-            color: kNavAbleNavy,
+            color: context.navAblePrimaryText,
             fontSize: 20,
             fontWeight: FontWeight.w800,
           ),
@@ -242,6 +545,94 @@ class _ReportsPageState extends State<_ReportsPage> {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _PhotoAnalysisCard extends StatelessWidget {
+  const _PhotoAnalysisCard({required this.analysis});
+
+  final PhotoAnalysis analysis;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = switch (analysis.status) {
+      'completed' => 'AI scan complete',
+      'partial' => 'Some photos were scanned',
+      _ => 'AI scan unavailable',
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(NavAbleSpacing.sm),
+      decoration: BoxDecoration(
+        color: context.isNavAbleDark
+            ? NavAblePalette.darkSurface
+            : const Color(0xFFF1F7F3),
+        borderRadius: BorderRadius.circular(NavAbleRadius.small),
+        border: Border.all(
+          color: context.isNavAbleDark
+              ? NavAblePalette.darkBorder
+              : const Color(0xFFD5E9DB),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: context.navAblePrimaryText,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            analysis.message ??
+                'Suggestions only. An administrator must verify every report.',
+            style: TextStyle(color: context.navAbleSecondaryText, fontSize: 12),
+          ),
+          for (final suggestion in analysis.photoSuggestions) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Photo ${((suggestion['photoIndex'] as num?)?.toInt() ?? -1) + 1}',
+              style: TextStyle(
+                color: context.navAblePrimaryText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (suggestion['detections'] is List &&
+                (suggestion['detections'] as List).isNotEmpty)
+              for (final detection
+                  in (suggestion['detections'] as List).whereType<Map>())
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    detection.entries
+                        .where(
+                          (entry) =>
+                              entry.value is String ||
+                              entry.value is num ||
+                              entry.value is bool,
+                        )
+                        .map((entry) => '${entry.key}: ${entry.value}')
+                        .join(' · '),
+                    style: TextStyle(
+                      color: context.navAblePrimaryText,
+                      fontSize: 12,
+                    ),
+                  ),
+                )
+            else
+              Text(
+                'No objects detected in this photo.',
+                style: TextStyle(
+                  color: context.navAbleSecondaryText,
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -268,12 +659,12 @@ class _ReportFormCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 19, color: kNavAbleNavy),
+              Icon(icon, size: 19, color: context.navAblePrimaryText),
               const SizedBox(width: NavAbleSpacing.xs),
               Text(
                 title,
-                style: const TextStyle(
-                  color: kNavAbleNavy,
+                style: TextStyle(
+                  color: context.navAblePrimaryText,
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                 ),
@@ -288,16 +679,17 @@ class _ReportFormCard extends StatelessWidget {
   }
 }
 
-InputDecoration _reportFieldDecoration({
+InputDecoration _reportFieldDecoration(
+  BuildContext context, {
   required String hintText,
   IconData? icon,
 }) {
   return InputDecoration(
     hintText: hintText,
-    hintStyle: const TextStyle(color: Color(0xFF7B8794), fontSize: 13),
+    hintStyle: TextStyle(color: context.navAbleSecondaryText, fontSize: 13),
     prefixIcon: icon == null ? null : Icon(icon, size: 18),
     filled: true,
-    fillColor: const Color(0xFFF1F4F6),
+    fillColor: context.navAbleSurface,
     contentPadding: const EdgeInsets.symmetric(
       horizontal: NavAbleSpacing.sm,
       vertical: NavAbleSpacing.sm,
@@ -328,7 +720,7 @@ class _PhotoSourceButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -354,14 +746,18 @@ class _PhotoSourceButton extends StatelessWidget {
                 children: [
                   Icon(
                     selected ? Icons.check_circle_rounded : icon,
-                    color: selected ? NavAblePalette.greenDark : kNavAbleText,
+                    color: selected
+                        ? NavAblePalette.greenDark
+                        : context.navAbleSecondaryText,
                     size: 24,
                   ),
                   const SizedBox(height: NavAbleSpacing.xs),
                   Text(
                     selected ? '$label added' : label,
                     style: TextStyle(
-                      color: selected ? NavAblePalette.greenDark : kNavAbleNavy,
+                      color: selected
+                          ? NavAblePalette.greenDark
+                          : context.navAblePrimaryText,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
@@ -376,61 +772,138 @@ class _PhotoSourceButton extends StatelessWidget {
   }
 }
 
-class _ReportMapPlaceholder extends StatelessWidget {
-  const _ReportMapPlaceholder();
+class _ReportMapPlaceholder extends StatefulWidget {
+  const _ReportMapPlaceholder({
+    required this.initialLocation,
+    required this.locations,
+    required this.onLocationSelected,
+    required this.onAccessibleLocationSelected,
+  });
+
+  final AccessibleLocation? initialLocation;
+  final List<AccessibleLocation> locations;
+  final ValueChanged<osm.LatLng> onLocationSelected;
+  final ValueChanged<AccessibleLocation> onAccessibleLocationSelected;
 
   @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(NavAbleRadius.small),
-      child: SizedBox(
-        height: 132,
-        width: double.infinity,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            CustomPaint(painter: _ReportMapPainter()),
-            const Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: kNavAbleNavy,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(0x330F2B4D),
-                      blurRadius: 12,
-                      offset: Offset(0, 5),
-                    ),
-                  ],
+  State<_ReportMapPlaceholder> createState() => _ReportMapPlaceholderState();
+}
+
+class _ReportMapPlaceholderState extends State<_ReportMapPlaceholder> {
+  osm.LatLng? _selectedPosition;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedPosition = _positionFor(widget.initialLocation);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ReportMapPlaceholder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialLocation?.id != widget.initialLocation?.id ||
+        oldWidget.initialLocation?.latitude !=
+            widget.initialLocation?.latitude ||
+        oldWidget.initialLocation?.longitude !=
+            widget.initialLocation?.longitude) {
+      _selectedPosition = _positionFor(widget.initialLocation);
+    }
+  }
+
+  osm.LatLng? _positionFor(AccessibleLocation? location) => location == null
+      ? null
+      : osm.LatLng(location.latitude, location.longitude);
+
+  void _selectPosition(osm.LatLng position) {
+    setState(() => _selectedPosition = position);
+    widget.onLocationSelected(position);
+  }
+
+  void _selectAccessibleLocation(AccessibleLocation location) {
+    final position = _positionFor(location)!;
+    setState(() => _selectedPosition = position);
+    widget.onAccessibleLocationSelected(location);
+  }
+
+  Future<void> _openExpandedMap() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            title: Text('pin report location'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('Done'),
+              ),
+            ],
+          ),
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: _OpenStreetMapView(
+                  initialPosition: _selectedPosition ?? _cebuMapCenter,
+                  initialSelection: _selectedPosition,
+                  selectionMode: true,
+                  locations: widget.locations,
+                  onAccessibleLocationTapped: _selectAccessibleLocation,
+                  onLocationSelected: _selectPosition,
                 ),
-                child: Padding(
-                  padding: EdgeInsets.all(9),
-                  child: Icon(
-                    Icons.location_on_rounded,
-                    color: Colors.white,
-                    size: 22,
+              ),
+              Positioned(
+                left: NavAbleSpacing.md,
+                right: NavAbleSpacing.md,
+                bottom: NavAbleSpacing.md,
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(NavAbleSpacing.md),
+                    child: Text(
+                      _selectedPosition == null
+                          ? 'Tap the map to place the report pin, or choose an existing accessible location.'
+                          : 'Pinned at ${_selectedPosition!.latitude.toStringAsFixed(6)}, ${_selectedPosition!.longitude.toStringAsFixed(6)}. Tap elsewhere to adjust.',
+                    ),
                   ),
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 132,
+      width: double.infinity,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(NavAbleRadius.small),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: _OpenStreetMapView(
+                initialPosition: _selectedPosition ?? _cebuMapCenter,
+                initialSelection: _selectedPosition,
+                selectionMode: true,
+                locations: widget.locations,
+                onAccessibleLocationTapped: _selectAccessibleLocation,
+                onLocationSelected: _selectPosition,
+                borderRadius: BorderRadius.circular(NavAbleRadius.small),
+              ),
             ),
-            const Positioned(
-              right: 8,
-              bottom: 8,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Color(0xEFFFFFFF),
-                  borderRadius: BorderRadius.all(Radius.circular(99)),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Text(
-                    'Map preview',
-                    style: TextStyle(
-                      color: kNavAbleText,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+            Positioned(
+              top: NavAbleSpacing.xs,
+              right: NavAbleSpacing.xs,
+              child: Material(
+                color: Colors.white,
+                elevation: 2,
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: 'Expand map',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _openExpandedMap,
+                  icon: Icon(Icons.open_in_full_rounded),
                 ),
               ),
             ),
@@ -439,55 +912,6 @@ class _ReportMapPlaceholder extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ReportMapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFFE7ECEF),
-    );
-
-    final blockPaint = Paint()..color = const Color(0xFFDCE5DE);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(-12, 12, size.width * .42, 42),
-        const Radius.circular(8),
-      ),
-      blockPaint,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(size.width * .62, 72, size.width * .42, 46),
-        const Radius.circular(8),
-      ),
-      blockPaint,
-    );
-
-    final roadPaint = Paint()
-      ..color = const Color(0xFFFAFCFC)
-      ..strokeWidth = 13
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(
-      Offset(-10, size.height * .82),
-      Offset(size.width + 10, size.height * .18),
-      roadPaint,
-    );
-    canvas.drawLine(
-      Offset(size.width * .18, -8),
-      Offset(size.width * .76, size.height + 8),
-      roadPaint,
-    );
-    canvas.drawLine(
-      Offset(-8, size.height * .35),
-      Offset(size.width + 8, size.height * .68),
-      roadPaint..strokeWidth = 8,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _DashedBorderPainter extends CustomPainter {

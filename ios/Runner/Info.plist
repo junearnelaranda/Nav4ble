@@ -30,6 +30,10 @@
 	<string>NavAble uses the camera so you can take a profile photo.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>NavAble uses your photo library so you can choose a profile photo.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>NavAble uses your location to center the map and help you choose a report location.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>NavAble uses your location while the app is open to center the map and help you choose a report location.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

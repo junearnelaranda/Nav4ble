@@ -48,8 +48,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     super.dispose();
   }
 
-  void _sendResetLink() {
-    final message = AuthService.resetPassword(_emailController.text);
+  Future<void> _sendResetLink() async {
+    final message = await AuthService.resetPassword(_emailController.text);
+    if (!mounted) return;
 
     ScaffoldMessenger.of(
       context,
@@ -442,8 +443,6 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                const Icon(Icons.arrow_forward_rounded, size: 26),
               ],
             ),
           ),

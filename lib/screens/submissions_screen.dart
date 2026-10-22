@@ -1,9 +1,13 @@
 part of '../home.dart';
 
 class _MySubmissionsScreen extends StatefulWidget {
-  const _MySubmissionsScreen({required this.submissions});
+  const _MySubmissionsScreen({
+    required this.submissions,
+    required this.reportCount,
+  });
 
   final List<AccessibilitySubmission> submissions;
+  final int? reportCount;
 
   @override
   State<_MySubmissionsScreen> createState() => _MySubmissionsScreenState();
@@ -34,8 +38,6 @@ class _MySubmissionsScreenState extends State<_MySubmissionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final approvedCount = _countFor(SubmissionStatus.approved);
-
     return Scaffold(
       appBar: AppBar(
         title: const SizedBox.shrink(),
@@ -55,19 +57,23 @@ class _MySubmissionsScreenState extends State<_MySubmissionsScreen> {
             NavAbleSpacing.xxl,
           ),
           children: [
-            const Text(
+            Text(
               'My Submissions',
               style: TextStyle(
-                color: kNavAbleNavy,
+                color: context.navAblePrimaryText,
                 fontSize: 24,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.2,
               ),
             ),
             const SizedBox(height: NavAbleSpacing.xs),
-            const Text(
+            Text(
               'Track the status of accessibility reports you’ve shared with the community.',
-              style: TextStyle(color: kNavAbleText, fontSize: 13, height: 1.4),
+              style: TextStyle(
+                color: context.navAbleSecondaryText,
+                fontSize: 13,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: NavAbleSpacing.lg),
             _SubmissionStatusTabs(
@@ -92,9 +98,7 @@ class _MySubmissionsScreenState extends State<_MySubmissionsScreen> {
                   ),
                 ),
             const SizedBox(height: NavAbleSpacing.xs),
-            _ContributorProgressCard(reportCount: widget.submissions.length),
-            const SizedBox(height: NavAbleSpacing.sm),
-            _TrustScoreCard(approvedCount: approvedCount),
+            _ContributorProgressCard(reportCount: widget.reportCount),
           ],
         ),
       ),
@@ -177,8 +181,8 @@ class _SubmissionStatusTabs extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: selectedStatus == status
-                                ? kNavAbleNavy
-                                : kNavAbleText,
+                                ? context.navAblePrimaryText
+                                : context.navAbleSecondaryText,
                             fontSize: 11,
                             fontWeight: selectedStatus == status
                                 ? FontWeight.w800
@@ -226,7 +230,11 @@ class _SubmissionCard extends StatelessWidget {
                   color: const Color(0xFFDDE9FF),
                   borderRadius: BorderRadius.circular(NavAbleRadius.small),
                 ),
-                child: Icon(submission.icon, color: kNavAbleNavy, size: 23),
+                child: Icon(
+                  submission.icon,
+                  color: context.navAblePrimaryText,
+                  size: 23,
+                ),
               ),
               const SizedBox(width: NavAbleSpacing.sm),
               Expanded(
@@ -239,8 +247,8 @@ class _SubmissionCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             submission.title,
-                            style: const TextStyle(
-                              color: kNavAbleNavy,
+                            style: TextStyle(
+                              color: context.navAblePrimaryText,
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
                               height: 1.2,
@@ -254,7 +262,10 @@ class _SubmissionCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       'Submitted on ${submission.submittedOn}',
-                      style: const TextStyle(color: kNavAbleText, fontSize: 11),
+                      style: TextStyle(
+                        color: context.navAbleSecondaryText,
+                        fontSize: 11,
+                      ),
                     ),
                   ],
                 ),
@@ -285,14 +296,14 @@ class _SubmissionCard extends StatelessWidget {
               TextButton.icon(
                 onPressed: onViewDetails,
                 iconAlignment: IconAlignment.end,
-                icon: const Icon(Icons.chevron_right_rounded, size: 17),
-                label: const Text('View Details'),
+                icon: Icon(Icons.chevron_right_rounded, size: 17),
+                label: Text('View Details'),
                 style: TextButton.styleFrom(
-                  foregroundColor: kNavAbleNavy,
+                  foregroundColor: context.navAblePrimaryText,
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   minimumSize: const Size(48, 40),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  textStyle: const TextStyle(
+                  textStyle: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),
@@ -336,18 +347,18 @@ class _SubmissionStatusPill extends StatelessWidget {
 class _ContributorProgressCard extends StatelessWidget {
   const _ContributorProgressCard({required this.reportCount});
 
-  final int reportCount;
+  final int? reportCount;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(NavAbleSpacing.lg),
       decoration: BoxDecoration(
-        color: kNavAbleNavy,
+        color: NavAblePalette.navy,
         borderRadius: BorderRadius.circular(NavAbleRadius.control),
         boxShadow: [
           BoxShadow(
-            color: kNavAbleNavy.withValues(alpha: 0.18),
+            color: NavAblePalette.navy.withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -358,17 +369,20 @@ class _ContributorProgressCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.emoji_events_outlined, color: Color(0xFF9CB5D0)),
+              Icon(Icons.emoji_events_outlined, color: Color(0xFF9CB5D0)),
               const Spacer(),
               DecoratedBox(
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(NavAbleRadius.pill),
                 ),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 5,
+                  ),
                   child: Text(
-                    'Level 4 Contributor',
+                    'Community contributor',
                     style: TextStyle(
                       color: Color(0xFFBFD0E0),
                       fontSize: 10,
@@ -381,86 +395,17 @@ class _ContributorProgressCard extends StatelessWidget {
           ),
           const SizedBox(height: NavAbleSpacing.lg),
           Text(
-            '$reportCount Reports',
-            style: const TextStyle(
+            '${reportCount?.toString() ?? '--'} Reports',
+            style: TextStyle(
               color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 3),
-          const Text(
-            'Helping thousands find their way.',
-            style: TextStyle(color: Color(0xFFBFD0E0), fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TrustScoreCard extends StatelessWidget {
-  const _TrustScoreCard({required this.approvedCount});
-
-  final int approvedCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(NavAbleSpacing.lg),
-      decoration: BoxDecoration(
-        color: const Color(0xFF83F293),
-        borderRadius: BorderRadius.circular(NavAbleRadius.control),
-        boxShadow: [
-          BoxShadow(
-            color: NavAblePalette.green.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.check_circle_outline_rounded,
-                color: kNavAbleNavy,
-              ),
-              const Spacer(),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(NavAbleRadius.pill),
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-                  child: Text(
-                    'Trust Score: 98%',
-                    style: TextStyle(
-                      color: kNavAbleNavy,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: NavAbleSpacing.lg),
           Text(
-            '$approvedCount Approved',
-            style: const TextStyle(
-              color: kNavAbleNavy,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 3),
-          const Text(
-            'Your contributions are highly accurate.',
-            style: TextStyle(color: kNavAbleNavy, fontSize: 12),
+            'Your reports help build the accessibility map.',
+            style: TextStyle(color: Color(0xFFBFD0E0), fontSize: 12),
           ),
         ],
       ),
@@ -476,7 +421,7 @@ class _SubmissionDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Submission Details')),
+      appBar: AppBar(title: Text('Submission Details')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(NavAbleSpacing.lg),
@@ -496,14 +441,17 @@ class _SubmissionDetailsScreen extends StatelessWidget {
                             NavAbleRadius.tile,
                           ),
                         ),
-                        child: Icon(submission.icon, color: kNavAbleNavy),
+                        child: Icon(
+                          submission.icon,
+                          color: context.navAblePrimaryText,
+                        ),
                       ),
                       const SizedBox(width: NavAbleSpacing.sm),
                       Expanded(
                         child: Text(
                           submission.title,
-                          style: const TextStyle(
-                            color: kNavAbleNavy,
+                          style: TextStyle(
+                            color: context.navAblePrimaryText,
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
                           ),
@@ -525,12 +473,15 @@ class _SubmissionDetailsScreen extends StatelessWidget {
                   const SizedBox(height: NavAbleSpacing.xs),
                   Text(
                     'Submitted on ${submission.submittedOn}',
-                    style: const TextStyle(color: kNavAbleText),
+                    style: TextStyle(color: context.navAbleSecondaryText),
                   ),
                   const SizedBox(height: NavAbleSpacing.lg),
-                  const Text(
+                  Text(
                     'Community reviewers check the location, accessibility details, and supporting photo before updating this status.',
-                    style: TextStyle(color: kNavAbleText, height: 1.5),
+                    style: TextStyle(
+                      color: context.navAbleSecondaryText,
+                      height: 1.5,
+                    ),
                   ),
                 ],
               ),

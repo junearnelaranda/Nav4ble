@@ -23,12 +23,13 @@ class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   bool _rememberDevice = false;
   bool _obscurePassword = true;
-  final TextEditingController _emailController = TextEditingController(
-    text: AuthService.demoEmail,
-  );
-  final TextEditingController _passwordController = TextEditingController(
-    text: AuthService.demoPassword,
-  );
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  String? _emailError;
+  String? _passwordError;
+  String? _loginError;
+  bool _credentialsRejected = false;
+  bool _isLoading = false;
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
   late final Animation<Offset> _slideAnimation;
@@ -59,22 +60,54 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  void _login() {
-    final result = AuthService.login(
-      email: _emailController.text,
-      password: _passwordController.text,
-    );
+  Future<void> _login() async {
+    if (_isLoading) return;
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    setState(() {
+      _emailError = email.isEmpty
+          ? 'Enter your email address.'
+          : AuthService.isValidEmail(email)
+          ? null
+          : 'Enter a valid email address.';
+      _passwordError = password.isEmpty ? 'Enter your password.' : null;
+      _loginError = null;
+      _credentialsRejected = false;
+    });
+    if (_emailError != null || _passwordError != null) return;
+
+    setState(() => _isLoading = true);
+    AuthResult result;
+    try {
+      result = await AuthService.login(email: email, password: password);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loginError = 'Could not sign in. Check your connection and try again.';
+      });
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _isLoading = false);
 
     if (!result.isSuccess) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message ?? 'Login failed.')),
-      );
+      final message = result.message ?? 'Login failed. Please try again.';
+      final credentialsRejected =
+          message.toLowerCase().contains('email or password is incorrect');
+      setState(() {
+        _loginError = credentialsRejected
+            ? 'Email or password is incorrect. Check both fields and try again.'
+            : message;
+        _credentialsRejected = credentialsRejected;
+      });
       return;
     }
 
-    Navigator.of(
-      context,
-    ).pushReplacement(_fadeRoute(const SplashScreen(nextScreen: HomeScreen())));
+    Navigator.of(context).pushAndRemoveUntil(
+      _fadeRoute(const SplashScreen(nextScreen: HomeScreen())),
+      (route) => false,
+    );
   }
 
   void _showProviderPlaceholder(String provider) {
@@ -83,8 +116,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  void _continueAsGuest() {
-    AuthService.signOut();
+  Future<void> _continueAsGuest() async {
+    await AuthService.signOut();
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       _fadeRoute(const SplashScreen(nextScreen: HomeScreen(isGuest: true))),
     );
@@ -148,20 +182,40 @@ class _LoginScreenState extends State<LoginScreen>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  if (_loginError != null) ...[
+                                    _LoginErrorBanner(message: _loginError!),
+                                    const SizedBox(height: 16),
+                                  ],
                                   _LoginField(
                                     label: 'Email Address',
                                     icon: Icons.email_outlined,
-                                    hintText: 'june@example.com',
+                                    hintText: 'user@example.com',
                                     controller: _emailController,
                                     keyboardType: TextInputType.emailAddress,
+                                    error: _credentialsRejected ||
+                                        _emailError != null,
+                                    errorText: _emailError,
+                                    onChanged: (_) => setState(() {
+                                      _emailError = null;
+                                      _loginError = null;
+                                      _credentialsRejected = false;
+                                    }),
                                   ),
                                   const SizedBox(height: 20),
                                   _LoginField(
                                     label: 'Password',
                                     icon: Icons.lock_outline,
-                                    hintText: '********',
+                                    hintText: '',
                                     controller: _passwordController,
                                     obscureText: _obscurePassword,
+                                    error: _credentialsRejected ||
+                                        _passwordError != null,
+                                    errorText: _passwordError,
+                                    onChanged: (_) => setState(() {
+                                      _passwordError = null;
+                                      _loginError = null;
+                                      _credentialsRejected = false;
+                                    }),
                                     labelAction: TextButton(
                                       onPressed: () {
                                         Navigator.of(context).push(
@@ -187,6 +241,9 @@ class _LoginScreenState extends State<LoginScreen>
                                       ),
                                     ),
                                     suffixIcon: IconButton(
+                                      tooltip: _obscurePassword
+                                          ? 'Show password'
+                                          : 'Hide password',
                                       onPressed: () {
                                         setState(
                                           () => _obscurePassword =
@@ -195,8 +252,8 @@ class _LoginScreenState extends State<LoginScreen>
                                       },
                                       icon: Icon(
                                         _obscurePassword
-                                            ? Icons.visibility_outlined
-                                            : Icons.visibility_off_outlined,
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined,
                                         color: const Color(0xFF5F6B7A),
                                         size: 20,
                                       ),
@@ -241,7 +298,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   ),
                                   const SizedBox(height: 28),
                                   _PrimaryButton(
-                                    label: 'Login',
+                                    label: _isLoading ? 'Signing in…' : 'Login',
                                     onPressed: _login,
                                   ),
                                 ],
@@ -254,7 +311,7 @@ class _LoginScreenState extends State<LoginScreen>
                               width: double.infinity,
                               height: NavAbleSize.primaryButton,
                               child: OutlinedButton.icon(
-                                onPressed: _continueAsGuest,
+                                onPressed: _isLoading ? null : _continueAsGuest,
                                 icon: const Icon(Icons.person_outline_rounded),
                                 label: const Text('Continue as a Guest'),
                                 style: OutlinedButton.styleFrom(
@@ -267,17 +324,6 @@ class _LoginScreenState extends State<LoginScreen>
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Search  →  View place  →  Check accessibility  →  Navigate',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: kNavAbleText,
-                                fontSize: 12,
-                                height: 1.4,
-                                letterSpacing: 0,
                               ),
                             ),
                             const SizedBox(height: 22),
@@ -434,6 +480,44 @@ class _PremiumCard extends StatelessWidget {
   }
 }
 
+class _LoginErrorBanner extends StatelessWidget {
+  const _LoginErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    const errorColor = Color(0xFFB42318);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3F2),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFDA29B)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline_rounded, color: errorColor, size: 19),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: errorColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LoginField extends StatelessWidget {
   const _LoginField({
     required this.label,
@@ -444,6 +528,9 @@ class _LoginField extends StatelessWidget {
     this.obscureText = false,
     this.suffixIcon,
     this.labelAction,
+    this.error = false,
+    this.errorText,
+    this.onChanged,
   });
 
   final String label;
@@ -454,6 +541,9 @@ class _LoginField extends StatelessWidget {
   final bool obscureText;
   final Widget? suffixIcon;
   final Widget? labelAction;
+  final bool error;
+  final String? errorText;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -483,8 +573,13 @@ class _LoginField extends StatelessWidget {
             controller: controller,
             keyboardType: keyboardType,
             obscureText: obscureText,
+            onChanged: onChanged,
             decoration: InputDecoration(
-              prefixIcon: Icon(icon, color: kNavAbleGreen, size: 20),
+              prefixIcon: Icon(
+                icon,
+                color: error ? const Color(0xFFB42318) : kNavAbleGreen,
+                size: 20,
+              ),
               prefixIconConstraints: const BoxConstraints(
                 minWidth: 48,
                 minHeight: 56,
@@ -501,22 +596,57 @@ class _LoginField extends StatelessWidget {
                 letterSpacing: 0,
               ),
               filled: true,
-              fillColor: const Color(0xFFF7FAF8),
+              fillColor: error
+                  ? const Color(0xFFFFF8F7)
+                  : const Color(0xFFF7FAF8),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
                 vertical: 18,
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: Color(0xFFDDE5DF)),
+                borderSide: BorderSide(
+                  color: error
+                      ? const Color(0xFFD92D20)
+                      : const Color(0xFFDDE5DF),
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: kNavAbleGreen, width: 1.5),
+                borderSide: BorderSide(
+                  color: error
+                      ? const Color(0xFFD92D20)
+                      : kNavAbleGreen,
+                  width: 1.5,
+                ),
               ),
             ),
           ),
         ),
+        if (errorText != null) ...[
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                color: Color(0xFFB42318),
+                size: 15,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  errorText!,
+                  style: const TextStyle(
+                    color: Color(0xFFB42318),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -571,8 +701,6 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
                     letterSpacing: 0,
                   ),
                 ),
-                const SizedBox(width: 12),
-                const Icon(Icons.arrow_forward_rounded, size: 26),
               ],
             ),
           ),

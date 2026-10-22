@@ -15,6 +15,19 @@ abstract final class NavAblePalette {
   static const darkBorder = Color(0xFF31404D);
 }
 
+extension NavAbleThemeColors on BuildContext {
+  bool get isNavAbleDark => Theme.of(this).brightness == Brightness.dark;
+
+  Color get navAblePrimaryText =>
+      isNavAbleDark ? Colors.white : NavAblePalette.navy;
+
+  Color get navAbleSecondaryText =>
+      isNavAbleDark ? NavAblePalette.darkText : NavAblePalette.text;
+
+  Color get navAbleSurface =>
+      isNavAbleDark ? NavAblePalette.darkSurface : NavAblePalette.surface;
+}
+
 abstract final class NavAblePreferences {
   static final themeMode = ValueNotifier<ThemeMode>(ThemeMode.light);
   static final textScale = ValueNotifier<double>(1);
@@ -295,7 +308,7 @@ class NavAbleSurface extends StatefulWidget {
     required this.child,
     this.padding = const EdgeInsets.all(NavAbleSpacing.cardInset),
     this.borderRadius = NavAbleRadius.card,
-    this.color = NavAblePalette.surface,
+    this.color,
     this.onTap,
     this.enableHover = false,
     this.width,
@@ -304,7 +317,7 @@ class NavAbleSurface extends StatefulWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   final double borderRadius;
-  final Color color;
+  final Color? color;
   final VoidCallback? onTap;
   final bool enableHover;
   final double? width;
@@ -356,7 +369,9 @@ class _NavAbleSurfaceState extends State<NavAbleSurface> {
           transform: Matrix4.translationValues(0, lift, 0),
           transformAlignment: Alignment.center,
           decoration: BoxDecoration(
-            color: widget.color,
+            color:
+                widget.color ??
+                (isDark ? NavAblePalette.darkSurface : NavAblePalette.surface),
             borderRadius: BorderRadius.circular(widget.borderRadius),
             border: Border.all(
               color: isDark

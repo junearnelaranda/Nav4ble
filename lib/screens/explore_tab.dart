@@ -3,47 +3,28 @@ part of '../home.dart';
 class _ExplorePage extends StatefulWidget {
   const _ExplorePage({
     required this.searchController,
+    required this.locations,
+    required this.locationsLoading,
+    required this.locationsError,
     required this.onNavigate,
+    required this.onSubmitPhoto,
   });
 
   final TextEditingController searchController;
-  final ValueChanged<String> onNavigate;
+  final List<AccessibleLocation> locations;
+  final bool locationsLoading;
+  final String? locationsError;
+  final ValueChanged<AccessibleLocation> onNavigate;
+  final ValueChanged<AccessibleLocation> onSubmitPhoto;
 
   @override
   State<_ExplorePage> createState() => _ExplorePageState();
 }
 
 class _ExplorePageState extends State<_ExplorePage> {
-  final Set<String> _selectedFilters = {'Wheelchair Accessible'};
+  final Set<String> _selectedFilters = {};
   String _sortMode = 'Rating';
   late String _query;
-
-  static const List<_ExplorePlace> _places = [
-    _ExplorePlace(
-      name: 'Abaca Baking Company',
-      location: 'Ayala Center Cebu',
-      distance: '0.3 km',
-      score: 4.9,
-      tags: ['Ramp', 'Elevator', 'Accessible Restroom'],
-      icon: Icons.bakery_dining_rounded,
-    ),
-    _ExplorePlace(
-      name: 'Figaro Coffee',
-      location: 'Cebu Business Park',
-      distance: '0.5 km',
-      score: 4.8,
-      tags: ['Ramp', 'Braille', 'Accessible Entrance'],
-      icon: Icons.local_cafe_rounded,
-    ),
-    _ExplorePlace(
-      name: "Bo's Coffee",
-      location: 'Ayala Terraces',
-      distance: '0.9 km',
-      score: 4.6,
-      tags: ['Priority Parking', 'Transit Hub'],
-      icon: Icons.coffee_rounded,
-    ),
-  ];
 
   @override
   void initState() {
@@ -51,25 +32,32 @@ class _ExplorePageState extends State<_ExplorePage> {
     _query = widget.searchController.text;
   }
 
-  List<_ExplorePlace> get _visiblePlaces {
+  List<AccessibleLocation> get _visiblePlaces {
     final normalizedQuery = _query.trim().toLowerCase();
-    final isGeneralCafeSearch =
-        normalizedQuery.isEmpty ||
-        normalizedQuery.contains('cafe') ||
-        normalizedQuery.contains('coffee');
-    final places = _places.where((place) {
-      return isGeneralCafeSearch ||
+    final places = widget.locations.where((place) {
+      final matchesQuery =
+          normalizedQuery.isEmpty ||
           place.name.toLowerCase().contains(normalizedQuery) ||
-          place.location.toLowerCase().contains(normalizedQuery);
+          place.address.toLowerCase().contains(normalizedQuery) ||
+          place.features.any(
+            (feature) => feature.toLowerCase().contains(normalizedQuery),
+          );
+      final matchesFilters =
+          _selectedFilters.isEmpty ||
+          _selectedFilters.any((filter) {
+            final query = filter.toLowerCase().replaceAll('accessible ', '');
+            return place.features.any(
+              (feature) => feature.toLowerCase().contains(query),
+            );
+          });
+      return matchesQuery && matchesFilters;
     }).toList();
 
     switch (_sortMode) {
       case 'Name':
         places.sort((a, b) => a.name.compareTo(b.name));
-      case 'Distance':
-        places.sort((a, b) => a.distance.compareTo(b.distance));
       default:
-        places.sort((a, b) => b.score.compareTo(a.score));
+        places.sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
     }
     return places;
   }
@@ -130,17 +118,20 @@ class _ExplorePageState extends State<_ExplorePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${places.length} demo ${places.length == 1 ? 'place' : 'places'}',
-                        style: const TextStyle(
-                          color: kNavAbleNavy,
+                        '${places.length} ${places.length == 1 ? 'place' : 'places'}',
+                        style: TextStyle(
+                          color: context.navAblePrimaryText,
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                       const SizedBox(height: 2),
-                      const Text(
-                        'Local preview — no live places API yet',
-                        style: TextStyle(color: kNavAbleText, fontSize: 11),
+                      Text(
+                        'Locations from your NavAble database',
+                        style: TextStyle(
+                          color: context.navAbleSecondaryText,
+                          fontSize: 11,
+                        ),
                       ),
                     ],
                   ),
@@ -151,7 +142,6 @@ class _ExplorePageState extends State<_ExplorePage> {
                   onSelected: (value) => setState(() => _sortMode = value),
                   itemBuilder: (context) => const [
                     PopupMenuItem(value: 'Rating', child: Text('Rating')),
-                    PopupMenuItem(value: 'Distance', child: Text('Distance')),
                     PopupMenuItem(value: 'Name', child: Text('Name')),
                   ],
                   child: Row(
@@ -159,30 +149,42 @@ class _ExplorePageState extends State<_ExplorePage> {
                     children: [
                       Text(
                         'Sort by $_sortMode',
-                        style: const TextStyle(
-                          color: kNavAbleNavy,
+                        style: TextStyle(
+                          color: context.navAblePrimaryText,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const Icon(Icons.keyboard_arrow_down_rounded, size: 19),
+                      Icon(Icons.keyboard_arrow_down_rounded, size: 19),
                     ],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            if (places.isEmpty)
+            if (widget.locationsLoading)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (widget.locationsError != null)
+              _EmptyState(
+                icon: Icons.cloud_off_outlined,
+                title: 'Could not load locations',
+                detail: widget.locationsError!,
+              )
+            else if (places.isEmpty)
               const _EmptyState(
                 icon: Icons.search_off_rounded,
-                title: 'No demo places found',
-                detail: 'Try searching for café, coffee, or Cebu.',
+                title: 'No accessible locations found',
+                detail: 'Try another search or add a location to Firestore.',
               )
             else
               for (final place in places) ...[
                 _ExplorePlaceCard(
                   place: place,
                   onNavigate: widget.onNavigate,
+                  onSubmitPhoto: widget.onSubmitPhoto,
                 ),
                 const SizedBox(height: 12),
               ],
@@ -192,7 +194,7 @@ class _ExplorePageState extends State<_ExplorePage> {
           right: 14,
           bottom: 14,
           child: Material(
-            color: kNavAbleNavy,
+            color: NavAblePalette.navy,
             elevation: 5,
             shape: const CircleBorder(),
             child: IconButton(
@@ -205,31 +207,13 @@ class _ExplorePageState extends State<_ExplorePage> {
                 );
               },
               color: Colors.white,
-              icon: const Icon(Icons.my_location_rounded, size: 20),
+              icon: Icon(Icons.my_location_rounded, size: 20),
             ),
           ),
         ),
       ],
     );
   }
-}
-
-class _ExplorePlace {
-  const _ExplorePlace({
-    required this.name,
-    required this.location,
-    required this.distance,
-    required this.score,
-    required this.tags,
-    required this.icon,
-  });
-
-  final String name;
-  final String location;
-  final String distance;
-  final double score;
-  final List<String> tags;
-  final IconData icon;
 }
 
 class _ExploreSearchField extends StatelessWidget {
@@ -247,7 +231,7 @@ class _ExploreSearchField extends StatelessWidget {
       width: double.infinity,
       padding: EdgeInsets.zero,
       borderRadius: 12,
-      color: Colors.white,
+      color: context.navAbleSurface,
       child: TextField(
         controller: controller,
         onChanged: onChanged,
@@ -265,18 +249,23 @@ class _ExploreSearchField extends StatelessWidget {
 }
 
 class _ExplorePlaceCard extends StatelessWidget {
-  const _ExplorePlaceCard({required this.place, required this.onNavigate});
+  const _ExplorePlaceCard({
+    required this.place,
+    required this.onNavigate,
+    required this.onSubmitPhoto,
+  });
 
-  final _ExplorePlace place;
-  final ValueChanged<String> onNavigate;
+  final AccessibleLocation place;
+  final ValueChanged<AccessibleLocation> onNavigate;
+  final ValueChanged<AccessibleLocation> onSubmitPhoto;
 
   @override
   Widget build(BuildContext context) {
     return NavAbleHoverLift(
       child: Material(
-        color: Colors.white,
+        color: context.navAbleSurface,
         elevation: 1,
-        shadowColor: kNavAbleNavy.withValues(alpha: 0.08),
+        shadowColor: context.navAblePrimaryText.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -286,110 +275,71 @@ class _ExplorePlaceCard extends StatelessWidget {
                 builder: (context) => _ExplorePlaceDetails(
                   place: place,
                   onNavigate: onNavigate,
+                  onSubmitPhoto: onSubmitPhoto,
                 ),
               ),
             );
           },
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                height: 112,
-                width: double.infinity,
-                color: const Color(0xFFE3E7EA),
-                child: Stack(
-                  children: [
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            place.icon,
-                            color: const Color(0xFF98A2B3),
-                            size: 38,
-                          ),
-                          const SizedBox(height: 5),
-                          const Text(
-                            'Photo preview unavailable',
-                            style: TextStyle(
-                              color: Color(0xFF667085),
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF9AF5AE),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 4,
-                          ),
-                          child: Text(
-                            'DEMO',
-                            style: TextStyle(
-                              color: kNavAbleNavy,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: context.isNavAbleDark
+                      ? NavAblePalette.darkBorder
+                      : kNavAbleAccent,
+                  child: Icon(
+                    Icons.accessible_rounded,
+                    color: context.isNavAbleDark
+                        ? NavAblePalette.green
+                        : NavAblePalette.greenDark,
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            place.name,
-                            style: const TextStyle(
-                              color: kNavAbleNavy,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        place.name,
+                        style: TextStyle(
+                          color: context.navAblePrimaryText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
                         ),
+                      ),
+                      if (place.address.isNotEmpty)
                         Text(
-                          place.score.toStringAsFixed(1),
-                          style: const TextStyle(
-                            color: Color(0xFF07883D),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
+                          place.address,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: context.navAbleSecondaryText,
+                            fontSize: 11,
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${place.distance} • ${place.location}',
-                      style: const TextStyle(color: kNavAbleText, fontSize: 10),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 5,
-                      runSpacing: 5,
-                      children: [
-                        for (final tag in place.tags) _ExploreTag(label: tag),
-                      ],
-                    ),
-                  ],
+                      if (place.features.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 7),
+                          child: Wrap(
+                            spacing: 5,
+                            runSpacing: 5,
+                            children: [
+                              for (final feature in place.features.take(4))
+                                _ExploreTag(label: feature),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                if (place.rating != null) ...[
+                  const SizedBox(width: 8),
+                  Icon(Icons.star_rounded, color: kNavAbleGreen, size: 16),
+                  Text(place.rating!.toStringAsFixed(1)),
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -401,15 +351,17 @@ class _ExplorePlaceDetails extends StatelessWidget {
   const _ExplorePlaceDetails({
     required this.place,
     required this.onNavigate,
+    required this.onSubmitPhoto,
   });
 
-  final _ExplorePlace place;
-  final ValueChanged<String> onNavigate;
+  final AccessibleLocation place;
+  final ValueChanged<AccessibleLocation> onNavigate;
+  final ValueChanged<AccessibleLocation> onSubmitPhoto;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Place Details')),
+      appBar: AppBar(title: Text('Place Details')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(NavAbleSpacing.md),
@@ -423,38 +375,54 @@ class _ExplorePlaceDetails extends StatelessWidget {
                   CircleAvatar(
                     radius: 28,
                     backgroundColor: kNavAbleAccent,
-                    child: Icon(place.icon, color: kNavAbleNavy, size: 30),
+                    child: Icon(
+                      Icons.accessible_rounded,
+                      color: context.navAblePrimaryText,
+                      size: 30,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Text(
                     place.name,
-                    style: const TextStyle(
-                      color: kNavAbleNavy,
+                    style: TextStyle(
+                      color: context.navAblePrimaryText,
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  if (place.address.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      place.address,
+                      style: TextStyle(color: context.navAbleSecondaryText),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
                   Text(
-                    '${place.distance} • ${place.location}',
-                    style: const TextStyle(color: kNavAbleText),
+                    '${place.latitude.toStringAsFixed(6)}, ${place.longitude.toStringAsFixed(6)}',
+                    style: TextStyle(
+                      color: context.navAbleSecondaryText,
+                      fontSize: 12,
+                    ),
                   ),
                   const SizedBox(height: 22),
-                  const Text(
+                  Text(
                     'Accessibility',
                     style: TextStyle(
-                      color: kNavAbleNavy,
+                      color: context.navAblePrimaryText,
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
                   const SizedBox(height: 10),
-                  for (final feature in place.tags)
+                  if (place.features.isEmpty)
+                    Text('No accessibility features have been added yet.'),
+                  for (final feature in place.features)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.check_circle_rounded,
                             color: kNavAbleGreen,
                             size: 21,
@@ -473,10 +441,22 @@ class _ExplorePlaceDetails extends StatelessWidget {
               child: FilledButton.icon(
                 onPressed: () {
                   Navigator.of(context).pop();
-                  onNavigate(place.name);
+                  onSubmitPhoto(place);
                 },
-                icon: const Icon(Icons.navigation_rounded),
-                label: const Text('Navigate'),
+                icon: Icon(Icons.add_a_photo_outlined),
+                label: Text('Submit Accessibility Photos'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: NavAbleSize.primaryButton,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  onNavigate(place);
+                },
+                icon: Icon(Icons.navigation_rounded),
+                label: Text('Navigate'),
               ),
             ),
           ],
@@ -502,7 +482,7 @@ class _ExploreTag extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
         child: Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: Color(0xFF475467),
             fontSize: 9,
             fontWeight: FontWeight.w600,

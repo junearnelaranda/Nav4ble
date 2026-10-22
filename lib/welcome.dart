@@ -358,11 +358,7 @@ class _PrimaryCtaButtonState extends State<_PrimaryCtaButton> {
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Get Started'),
-                  SizedBox(width: 12),
-                  Icon(Icons.arrow_forward_rounded, size: 26),
-                ],
+                children: [Text('Get Started')],
               ),
             ),
           ),

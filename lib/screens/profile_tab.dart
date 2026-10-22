@@ -6,6 +6,7 @@ class _ProfilePage extends StatelessWidget {
     required this.contributionPoints,
     required this.reportCount,
     required this.savedPlaceCount,
+    required this.statsLoading,
     required this.submissions,
     required this.voiceGuidance,
     required this.onVoiceGuidanceChanged,
@@ -15,9 +16,10 @@ class _ProfilePage extends StatelessWidget {
   });
 
   final NavAbleUser? user;
-  final int contributionPoints;
-  final int reportCount;
-  final int savedPlaceCount;
+  final int? contributionPoints;
+  final int? reportCount;
+  final int? savedPlaceCount;
+  final bool statsLoading;
   final List<AccessibilitySubmission> submissions;
   final bool voiceGuidance;
   final ValueChanged<bool> onVoiceGuidanceChanged;
@@ -55,6 +57,7 @@ class _ProfilePage extends StatelessWidget {
           voiceGuidance: voiceGuidance,
           onVoiceGuidanceChanged: onVoiceGuidanceChanged,
           submissions: submissions,
+          reportCount: reportCount,
           onOpenInfo: onOpenInfo,
         ),
       ),
@@ -70,15 +73,15 @@ class _ProfilePage extends StatelessWidget {
           backgroundColor: Color(0xFFFEE4E2),
           child: Icon(Icons.logout_rounded, color: Color(0xFFB42318), size: 27),
         ),
-        title: const Text('Are you sure you want to sign out?'),
-        content: const Text(
+        title: Text('Are you sure you want to sign out?'),
+        content: Text(
           'You will need to log in again to access your NavAble profile.',
           textAlign: TextAlign.center,
         ),
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text('Cancel'),
           ),
           FilledButton.icon(
             onPressed: () => Navigator.of(context).pop(true),
@@ -86,8 +89,8 @@ class _ProfilePage extends StatelessWidget {
               backgroundColor: const Color(0xFFB42318),
               foregroundColor: Colors.white,
             ),
-            icon: const Icon(Icons.logout_rounded, size: 18),
-            label: const Text('Sign Out'),
+            icon: Icon(Icons.logout_rounded, size: 18),
+            label: Text('Sign Out'),
           ),
         ],
       ),
@@ -135,7 +138,7 @@ class _ProfilePage extends StatelessWidget {
                           ? Text(
                               _initials,
                               style: const TextStyle(
-                                color: kNavAbleNavy,
+                                color: NavAblePalette.navy,
                                 fontSize: 30,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -154,7 +157,7 @@ class _ProfilePage extends StatelessWidget {
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 3),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.verified_rounded,
                         color: Colors.white,
                         size: 16,
@@ -167,19 +170,19 @@ class _ProfilePage extends StatelessWidget {
               Text(
                 _displayName,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: kNavAbleNavy,
+                style: TextStyle(
+                  color: context.navAblePrimaryText,
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.2,
                 ),
               ),
               const SizedBox(height: NavAbleSpacing.xxs),
-              const Text(
+              Text(
                 'NavAble Gold Member • Verified Contributor',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: kNavAbleText,
+                  color: context.navAbleSecondaryText,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -189,7 +192,10 @@ class _ProfilePage extends StatelessWidget {
                 Text(
                   user!.email,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: kNavAbleText, fontSize: 12),
+                  style: TextStyle(
+                    color: context.navAbleSecondaryText,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ],
@@ -207,20 +213,20 @@ class _ProfilePage extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const _ProfileMetricIcon(
+              _ProfileMetricIcon(
                 icon: Icons.workspace_premium_rounded,
                 foreground: Colors.white,
-                background: kNavAbleNavy,
+                background: NavAblePalette.navy,
               ),
               const SizedBox(width: NavAbleSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'ACCESSIBILITY CONTRIBUTIONS',
                       style: TextStyle(
-                        color: kNavAbleText,
+                        color: context.navAbleSecondaryText,
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.7,
@@ -228,9 +234,10 @@ class _ProfilePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '$contributionPoints',
-                      style: const TextStyle(
-                        color: kNavAbleNavy,
+                      contributionPoints?.toString() ??
+                          (statsLoading ? '...' : '--'),
+                      style: TextStyle(
+                        color: context.navAblePrimaryText,
                         fontSize: 24,
                         fontWeight: FontWeight.w900,
                       ),
@@ -238,7 +245,10 @@ class _ProfilePage extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: kNavAbleText),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: context.navAbleSecondaryText,
+              ),
             ],
           ),
         ),
@@ -249,6 +259,7 @@ class _ProfilePage extends StatelessWidget {
               child: _ProfileStatCard(
                 icon: Icons.assignment_turned_in_outlined,
                 value: reportCount,
+                loading: statsLoading,
                 label: 'Reports Submitted',
                 foreground: NavAblePalette.greenDark,
                 background: const Color(0xFFDDF9E3),
@@ -259,8 +270,9 @@ class _ProfilePage extends StatelessWidget {
               child: _ProfileStatCard(
                 icon: Icons.bookmark_border_rounded,
                 value: savedPlaceCount,
+                loading: statsLoading,
                 label: 'Saved Places',
-                foreground: kNavAbleNavy,
+                foreground: NavAblePalette.navy,
                 background: const Color(0xFFDDEEFF),
               ),
             ),
@@ -273,8 +285,8 @@ class _ProfilePage extends StatelessWidget {
             height: NavAbleSize.primaryButton,
             child: FilledButton.icon(
               onPressed: onEditProfile,
-              icon: const Icon(Icons.edit_outlined, size: 19),
-              label: const Text('Edit Profile'),
+              icon: Icon(Icons.edit_outlined, size: 19),
+              label: Text('Edit Profile'),
             ),
           ),
         ),
@@ -304,8 +316,8 @@ class _ProfilePage extends StatelessWidget {
               ),
               animationDuration: const Duration(milliseconds: 160),
             ),
-            icon: const Icon(Icons.logout_rounded, size: 19),
-            label: const Text(
+            icon: Icon(Icons.logout_rounded, size: 19),
+            label: Text(
               'Log Out',
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
@@ -374,13 +386,15 @@ class _ProfileStatCard extends StatelessWidget {
   const _ProfileStatCard({
     required this.icon,
     required this.value,
+    required this.loading,
     required this.label,
     required this.foreground,
     required this.background,
   });
 
   final IconData icon;
-  final int value;
+  final int? value;
+  final bool loading;
   final String label;
   final Color foreground;
   final Color background;
@@ -400,9 +414,9 @@ class _ProfileStatCard extends StatelessWidget {
           ),
           const SizedBox(height: NavAbleSpacing.sm),
           Text(
-            '$value',
-            style: const TextStyle(
-              color: kNavAbleNavy,
+            value?.toString() ?? (loading ? '...' : '--'),
+            style: TextStyle(
+              color: context.navAblePrimaryText,
               fontSize: 24,
               fontWeight: FontWeight.w900,
             ),
@@ -412,8 +426,8 @@ class _ProfileStatCard extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: kNavAbleText,
+            style: TextStyle(
+              color: context.navAbleSecondaryText,
               fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
@@ -441,18 +455,18 @@ class _ProfileMenuTile extends StatelessWidget {
       color: Colors.transparent,
       child: ListTile(
         minTileHeight: NavAbleSize.control,
-        leading: Icon(icon, color: kNavAbleNavy, size: 20),
+        leading: Icon(icon, color: context.navAblePrimaryText, size: 20),
         title: Text(
           label,
-          style: const TextStyle(
-            color: kNavAbleNavy,
+          style: TextStyle(
+            color: context.navAblePrimaryText,
             fontSize: 14,
             fontWeight: FontWeight.w700,
           ),
         ),
-        trailing: const Icon(
+        trailing: Icon(
           Icons.chevron_right_rounded,
-          color: kNavAbleText,
+          color: context.navAbleSecondaryText,
           size: 20,
         ),
         onTap: onTap,

@@ -5,12 +5,14 @@ class _SettingsScreen extends StatefulWidget {
     required this.voiceGuidance,
     required this.onVoiceGuidanceChanged,
     required this.submissions,
+    required this.reportCount,
     required this.onOpenInfo,
   });
 
   final bool voiceGuidance;
   final ValueChanged<bool> onVoiceGuidanceChanged;
   final List<AccessibilitySubmission> submissions;
+  final int? reportCount;
   final void Function(String title, String body) onOpenInfo;
 
   @override
@@ -112,8 +114,10 @@ class _SettingsScreenState extends State<_SettingsScreen> {
   void _openSubmissions() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) =>
-            _MySubmissionsScreen(submissions: widget.submissions),
+        builder: (context) => _MySubmissionsScreen(
+          submissions: widget.submissions,
+          reportCount: widget.reportCount,
+        ),
       ),
     );
   }

@@ -22,6 +22,7 @@ class _RegisterScreenState extends State<RegisterScreen>
   bool _obscureConfirmPassword = true;
   bool _acceptedTerms = false;
   bool _showTermsError = false;
+  bool _isLoading = false;
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -59,7 +60,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
-  void _register() {
+  Future<void> _register() async {
+    if (_isLoading) return;
     FocusManager.instance.primaryFocus?.unfocus();
 
     final isFormValid = _formKey.currentState?.validate() ?? false;
@@ -68,12 +70,15 @@ class _RegisterScreenState extends State<RegisterScreen>
       return;
     }
 
-    final result = AuthService.register(
+    setState(() => _isLoading = true);
+    final result = await AuthService.register(
       fullName: _nameController.text,
       email: _emailController.text,
       password: _passwordController.text,
       confirmPassword: _confirmPasswordController.text,
     );
+    if (!mounted) return;
+    setState(() => _isLoading = false);
 
     if (!result.isSuccess) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -233,6 +238,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                                         return null;
                                       },
                                       suffixIcon: IconButton(
+                                        tooltip: _obscurePassword
+                                            ? 'Show password'
+                                            : 'Hide password',
                                         onPressed: () {
                                           setState(
                                             () => _obscurePassword =
@@ -241,8 +249,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                                         },
                                         icon: Icon(
                                           _obscurePassword
-                                              ? Icons.visibility_outlined
-                                              : Icons.visibility_off_outlined,
+                                              ? Icons.visibility_off_outlined
+                                              : Icons.visibility_outlined,
                                           color: const Color(0xFF5F6B7A),
                                           size: 20,
                                         ),
@@ -281,8 +289,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                                         },
                                         icon: Icon(
                                           _obscureConfirmPassword
-                                              ? Icons.visibility_outlined
-                                              : Icons.visibility_off_outlined,
+                                              ? Icons.visibility_off_outlined
+                                              : Icons.visibility_outlined,
                                           color: const Color(0xFF5F6B7A),
                                           size: 20,
                                         ),
@@ -303,7 +311,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                                     ),
                                     const SizedBox(height: 22),
                                     _PrimaryButton(
-                                      label: 'Sign Up',
+                                      label: _isLoading
+                                          ? 'Creating account…'
+                                          : 'Sign Up',
                                       onPressed: _register,
                                     ),
                                   ],
@@ -764,8 +774,6 @@ class _PrimaryButtonState extends State<_PrimaryButton> {
                     letterSpacing: 0,
                   ),
                 ),
-                const SizedBox(width: 12),
-                const Icon(Icons.arrow_forward_rounded, size: 26),
               ],
             ),
           ),

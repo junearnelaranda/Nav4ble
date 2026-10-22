@@ -33,6 +33,8 @@ migrate_working_dir/
 /build/
 /coverage/
 
+/android/local.properties
+
 # Symbolication related
 app.*.symbols
 
@@ -43,3 +45,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Cloudflare Worker local artifacts
+/worker/node_modules/
+/worker/.wrangler/

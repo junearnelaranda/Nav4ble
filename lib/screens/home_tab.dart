@@ -3,15 +3,27 @@ part of '../home.dart';
 class _PlanPage extends StatelessWidget {
   const _PlanPage({
     required this.isGuest,
+    required this.accessibleLocations,
+    required this.locationsLoading,
+    required this.locationsError,
+    required this.selectedLocation,
     required this.destinationController,
+    required this.placeSearchResults,
+    required this.placeSearching,
+    required this.searchedPlace,
     required this.routeStatus,
+    required this.walkingRoute,
+    required this.routing,
+    required this.travelMode,
+    required this.routeDurations,
+    required this.destinationSelected,
     required this.avoidStairs,
     required this.prioritizeElevators,
     required this.accessibleEntrance,
     required this.accessibleToilet,
     required this.tactilePaving,
     required this.audioAssistance,
-    required this.reports,
+    required this.onLocationSelected,
     required this.onAvoidStairsChanged,
     required this.onPrioritizeElevatorsChanged,
     required this.onAccessibleEntranceChanged,
@@ -19,23 +31,41 @@ class _PlanPage extends StatelessWidget {
     required this.onTactilePavingChanged,
     required this.onAudioAssistanceChanged,
     required this.onPlanRoute,
+    required this.onRouteModeSelected,
+    required this.onDestinationChanged,
+    required this.onSearchPlaces,
+    required this.onPlaceSelected,
     required this.onOpenRouteDetails,
     required this.onSaveDestination,
     required this.onReportBarrier,
+    required this.onSubmitAccessiblePhoto,
+    required this.onSubmitPlacePhoto,
     required this.onOpenSaved,
     required this.onOpenFilters,
   });
 
   final bool isGuest;
+  final List<AccessibleLocation> accessibleLocations;
+  final bool locationsLoading;
+  final String? locationsError;
+  final AccessibleLocation? selectedLocation;
   final TextEditingController destinationController;
+  final List<PlaceSearchResult> placeSearchResults;
+  final bool placeSearching;
+  final PlaceSearchResult? searchedPlace;
   final String? routeStatus;
+  final PlannedRoute? walkingRoute;
+  final bool routing;
+  final TravelMode travelMode;
+  final Map<TravelMode, double> routeDurations;
+  final bool destinationSelected;
   final bool avoidStairs;
   final bool prioritizeElevators;
   final bool accessibleEntrance;
   final bool accessibleToilet;
   final bool tactilePaving;
   final bool audioAssistance;
-  final List<AccessReport> reports;
+  final ValueChanged<AccessibleLocation> onLocationSelected;
   final ValueChanged<bool> onAvoidStairsChanged;
   final ValueChanged<bool> onPrioritizeElevatorsChanged;
   final ValueChanged<bool> onAccessibleEntranceChanged;
@@ -43,9 +73,15 @@ class _PlanPage extends StatelessWidget {
   final ValueChanged<bool> onTactilePavingChanged;
   final ValueChanged<bool> onAudioAssistanceChanged;
   final VoidCallback onPlanRoute;
+  final ValueChanged<TravelMode> onRouteModeSelected;
+  final ValueChanged<String> onDestinationChanged;
+  final VoidCallback onSearchPlaces;
+  final ValueChanged<PlaceSearchResult> onPlaceSelected;
   final VoidCallback onOpenRouteDetails;
-  final VoidCallback onSaveDestination;
+  final ValueChanged<AccessibleLocation> onSaveDestination;
   final VoidCallback onReportBarrier;
+  final VoidCallback onSubmitAccessiblePhoto;
+  final ValueChanged<AccessibleLocation> onSubmitPlacePhoto;
   final VoidCallback onOpenSaved;
   final VoidCallback onOpenFilters;
 
@@ -53,7 +89,22 @@ class _PlanPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        const Positioned.fill(child: _LightMapPlaceholder()),
+        Positioned.fill(
+          child: _OpenStreetMapView(
+            key: ValueKey(accessibleLocations.isNotEmpty),
+            initialPosition: selectedLocation == null
+                ? _cebuMapCenter
+                : osm.LatLng(
+                    selectedLocation!.latitude,
+                    selectedLocation!.longitude,
+                  ),
+            showLocationButton: true,
+            locations: accessibleLocations,
+            route: walkingRoute,
+            searchedPlace: searchedPlace,
+            onAccessibleLocationTapped: onLocationSelected,
+          ),
+        ),
         Positioned(
           left: 14,
           right: 14,
@@ -62,9 +113,17 @@ class _PlanPage extends StatelessWidget {
             children: [
               _HomeSearchBar(
                 controller: destinationController,
-                onSubmitted: (_) => onPlanRoute(),
+                onSubmitted: (_) => onSearchPlaces(),
+                onChanged: onDestinationChanged,
                 onFilterPressed: onOpenFilters,
+                onSearchPressed: onSearchPlaces,
               ),
+              if (placeSearching || placeSearchResults.isNotEmpty)
+                _PlaceSearchResults(
+                  results: placeSearchResults,
+                  loading: placeSearching,
+                  onSelected: onPlaceSelected,
+                ),
               const SizedBox(height: 10),
               SizedBox(
                 height: 38,
@@ -121,22 +180,16 @@ class _PlanPage extends StatelessWidget {
             ],
           ),
         ),
-        const Center(child: _CurrentLocationMarker()),
         Positioned(
           right: 12,
-          bottom: routeStatus == null ? 88 : 178,
+          bottom: walkingRoute != null
+              ? 230
+              : routeStatus == null
+              ? 88
+              : 178,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _MapActionButton(
-                icon: Icons.my_location_rounded,
-                tooltip: 'My location',
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Location preview centered.')),
-                  );
-                },
-              ),
               if (!isGuest) ...[
                 const SizedBox(height: 9),
                 _MapActionButton(
@@ -154,16 +207,10 @@ class _PlanPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 9),
                 _MapActionButton(
-                  icon: Icons.qr_code_scanner_rounded,
-                  tooltip: 'Scan accessibility code',
+                  icon: Icons.document_scanner_outlined,
+                  tooltip: 'Scan an accessibility feature',
                   label: 'Scan',
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Accessibility scanner coming soon.'),
-                      ),
-                    );
-                  },
+                  onPressed: onSubmitAccessiblePhoto,
                 ),
               ],
             ],
@@ -197,7 +244,7 @@ class _PlanPage extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (!routeStatus!.startsWith('Enter'))
+                        if (walkingRoute != null)
                           TextButton(
                             onPressed: onOpenRouteDetails,
                             child: const Text('View Route Details'),
@@ -205,6 +252,15 @@ class _PlanPage extends StatelessWidget {
                       ],
                     ),
                   ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              if (walkingRoute != null) ...[
+                _RouteModeOptions(
+                  selectedMode: travelMode,
+                  durations: routeDurations,
+                  enabled: !routing,
+                  onSelected: onRouteModeSelected,
                 ),
                 const SizedBox(height: 8),
               ],
@@ -220,7 +276,7 @@ class _PlanPage extends StatelessWidget {
                     ),
                     SizedBox(width: 6),
                     Text(
-                      'Nearby Accessible Places',
+                      'Accessible Locations',
                       style: TextStyle(
                         color: kNavAbleNavy,
                         fontSize: 12,
@@ -240,16 +296,31 @@ class _PlanPage extends StatelessWidget {
                       alignment: Alignment.centerLeft,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 300),
-                        child: _NearbyPlaceCard(onSave: onSaveDestination),
+                        child: selectedLocation == null
+                            ? _NearbyLocationMessage(
+                                loading: locationsLoading,
+                                error: locationsError,
+                              )
+                            : _AutoCollapsePlaceCard(
+                                location: selectedLocation!,
+                                onSave: () =>
+                                    onSaveDestination(selectedLocation!),
+                                onAddPhoto: () =>
+                                    onSubmitPlacePhoto(selectedLocation!),
+                              ),
                       ),
                     ),
                   ),
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    width: 180,
-                    child: _StartNavigationButton(onPressed: onPlanRoute),
-                  ),
+                  if (destinationSelected)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      width: 180,
+                      child: _StartNavigationButton(
+                        onPressed: routing ? null : onPlanRoute,
+                        loading: routing,
+                      ),
+                    ),
                 ],
               ),
             ],
@@ -264,12 +335,16 @@ class _HomeSearchBar extends StatelessWidget {
   const _HomeSearchBar({
     required this.controller,
     required this.onSubmitted,
+    required this.onChanged,
     required this.onFilterPressed,
+    required this.onSearchPressed,
   });
 
   final TextEditingController controller;
   final ValueChanged<String> onSubmitted;
+  final ValueChanged<String> onChanged;
   final VoidCallback onFilterPressed;
+  final VoidCallback onSearchPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -284,13 +359,18 @@ class _HomeSearchBar extends StatelessWidget {
           controller: controller,
           textInputAction: TextInputAction.search,
           onSubmitted: onSubmitted,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: 'Where would you like to go?',
             hintStyle: const TextStyle(color: Color(0xFF667085), fontSize: 12),
-            prefixIcon: const Icon(
-              Icons.search_rounded,
-              color: Color(0xFF475467),
-              size: 20,
+            prefixIcon: IconButton(
+              tooltip: 'Search places',
+              onPressed: onSearchPressed,
+              icon: const Icon(
+                Icons.search_rounded,
+                color: Color(0xFF475467),
+                size: 20,
+              ),
             ),
             prefixIconConstraints: const BoxConstraints.tightFor(
               width: 44,
@@ -332,6 +412,179 @@ class _HomeSearchBar extends StatelessWidget {
             border: InputBorder.none,
             hintMaxLines: 2,
             contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaceSearchResults extends StatelessWidget {
+  const _PlaceSearchResults({
+    required this.results,
+    required this.loading,
+    required this.onSelected,
+  });
+
+  final List<PlaceSearchResult> results;
+  final bool loading;
+  final ValueChanged<PlaceSearchResult> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 4,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: loading
+          ? const Padding(
+              padding: EdgeInsets.all(18),
+              child: Center(child: SizedBox.square(
+                dimension: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )),
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var index = 0; index < results.length; index++) ...[
+                  if (index > 0)
+                    const Divider(height: 1, indent: 48, endIndent: 12),
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.place_outlined, color: kNavAbleNavy),
+                    title: Text(
+                      results[index].name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      results[index].displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => onSelected(results[index]),
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+}
+
+class _RouteModeOptions extends StatelessWidget {
+  const _RouteModeOptions({
+    required this.selectedMode,
+    required this.durations,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final TravelMode selectedMode;
+  final Map<TravelMode, double> durations;
+  final bool enabled;
+  final ValueChanged<TravelMode> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    const modes = [
+      (TravelMode.walking, Icons.directions_walk_rounded),
+      (TravelMode.car, Icons.directions_car_rounded),
+      (TravelMode.motorcycle, Icons.motorcycle_rounded),
+    ];
+
+    return Material(
+      color: Colors.white,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(13),
+      child: Padding(
+        padding: const EdgeInsets.all(5),
+        child: Row(
+          children: [
+            for (final (mode, icon) in modes)
+              Expanded(
+                child: _RouteModeOption(
+                  mode: mode,
+                  icon: icon,
+                  selected: selectedMode == mode,
+                  enabled: enabled,
+                  durationSeconds: durations[mode],
+                  onTap: () => onSelected(mode),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RouteModeOption extends StatelessWidget {
+  const _RouteModeOption({
+    required this.mode,
+    required this.icon,
+    required this.selected,
+    required this.enabled,
+    required this.durationSeconds,
+    required this.onTap,
+  });
+
+  final TravelMode mode;
+  final IconData icon;
+  final bool selected;
+  final bool enabled;
+  final double? durationSeconds;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final minutes = durationSeconds == null
+        ? '-- min'
+        : '${(durationSeconds! / 60).round()} min';
+    final label = '${mode.label}, $minutes';
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Tooltip(
+        message: label,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: enabled ? onTap : null,
+            borderRadius: BorderRadius.circular(9),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(vertical: 7),
+              decoration: BoxDecoration(
+                color: selected
+                    ? kNavAbleNavy.withValues(alpha: 0.08)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: selected ? kNavAbleNavy : const Color(0xFF667085),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    minutes,
+                    style: TextStyle(
+                      color: selected ? kNavAbleNavy : const Color(0xFF475467),
+                      fontSize: 11,
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -442,86 +695,6 @@ class _FilterOptionTile extends StatelessWidget {
   }
 }
 
-class _LightMapPlaceholder extends StatelessWidget {
-  const _LightMapPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Color(0xFFE8ECEF),
-      child: CustomPaint(painter: _LightMapPainter()),
-    );
-  }
-}
-
-class _LightMapPainter extends CustomPainter {
-  const _LightMapPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final minorRoad = Paint()
-      ..color = const Color(0xFFF4F6F7)
-      ..strokeWidth = 8
-      ..strokeCap = StrokeCap.round;
-    final majorRoad = Paint()
-      ..color = const Color(0xFFFAFBFC)
-      ..strokeWidth = 15
-      ..strokeCap = StrokeCap.round;
-    final roadEdge = Paint()
-      ..color = const Color(0xFFD8DEE3)
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
-
-    final roads = <List<Offset>>[
-      [
-        Offset(-20, size.height * 0.24),
-        Offset(size.width + 30, size.height * 0.7),
-      ],
-      [Offset(size.width * 0.1, size.height), Offset(size.width * 0.68, -20)],
-      [Offset(-10, size.height * 0.68), Offset(size.width, size.height * 0.28)],
-      [Offset(size.width * 0.35, size.height), Offset(size.width * 0.2, -10)],
-      [Offset(size.width * 0.72, size.height), Offset(size.width * 0.9, -10)],
-    ];
-
-    for (var index = 0; index < roads.length; index++) {
-      final road = roads[index];
-      canvas.drawLine(road.first, road.last, index < 2 ? majorRoad : minorRoad);
-      canvas.drawLine(road.first, road.last, roadEdge);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _LightMapPainter oldDelegate) => false;
-}
-
-class _CurrentLocationMarker extends StatelessWidget {
-  const _CurrentLocationMarker();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 34,
-      height: 34,
-      decoration: BoxDecoration(
-        color: kNavAbleGreen.withValues(alpha: 0.2),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Container(
-        width: 20,
-        height: 20,
-        decoration: const BoxDecoration(
-          color: Color(0xFF07883D),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(color: Colors.white, spreadRadius: 3, blurRadius: 1),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _MapActionButton extends StatelessWidget {
   const _MapActionButton({
     required this.icon,
@@ -574,10 +747,139 @@ class _MapActionButton extends StatelessWidget {
   }
 }
 
-class _NearbyPlaceCard extends StatelessWidget {
-  const _NearbyPlaceCard({required this.onSave});
+class _AutoCollapsePlaceCard extends StatefulWidget {
+  const _AutoCollapsePlaceCard({
+    required this.location,
+    required this.onSave,
+    required this.onAddPhoto,
+  });
 
+  final AccessibleLocation location;
   final VoidCallback onSave;
+  final VoidCallback onAddPhoto;
+
+  @override
+  State<_AutoCollapsePlaceCard> createState() =>
+      _AutoCollapsePlaceCardState();
+}
+
+class _AutoCollapsePlaceCardState extends State<_AutoCollapsePlaceCard> {
+  static const _openDuration = Duration(seconds: 3);
+  static const _animationDuration = Duration(milliseconds: 260);
+
+  Timer? _collapseTimer;
+  bool _expanded = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleCollapse();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutoCollapsePlaceCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.location.id != widget.location.id) {
+      _collapseTimer?.cancel();
+      _expanded = true;
+      _scheduleCollapse();
+    }
+  }
+
+  void _scheduleCollapse() {
+    _collapseTimer?.cancel();
+    _collapseTimer = Timer(_openDuration, () {
+      if (mounted) setState(() => _expanded = false);
+    });
+  }
+
+  void _expand() {
+    setState(() => _expanded = true);
+    _scheduleCollapse();
+  }
+
+  @override
+  void dispose() {
+    _collapseTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: _animationDuration,
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.bottomLeft,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        child: _expanded
+            ? _NearbyPlaceCard(
+                key: ValueKey('expanded-${widget.location.id}'),
+                location: widget.location,
+                onSave: widget.onSave,
+                onAddPhoto: widget.onAddPhoto,
+              )
+            : Material(
+                key: ValueKey('collapsed-${widget.location.id}'),
+                color: Colors.white,
+                elevation: 3,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: _expand,
+                  borderRadius: BorderRadius.circular(24),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.place_rounded,
+                          color: kNavAbleNavy,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 7),
+                        Flexible(
+                          child: Text(
+                            widget.location.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: kNavAbleNavy,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Icon(
+                          Icons.keyboard_arrow_up_rounded,
+                          color: kNavAbleNavy,
+                          size: 19,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _NearbyPlaceCard extends StatelessWidget {
+  const _NearbyPlaceCard({
+    super.key,
+    required this.location,
+    required this.onSave,
+    required this.onAddPhoto,
+  });
+
+  final AccessibleLocation location;
+  final VoidCallback onSave;
+  final VoidCallback onAddPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -588,41 +890,85 @@ class _NearbyPlaceCard extends StatelessWidget {
       borderRadius: 12,
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Ayala Central Bloc',
-                  style: TextStyle(
+                  location.name,
+                  style: const TextStyle(
                     color: kNavAbleNavy,
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
-                  '0.7 miles • Transit',
-                  style: TextStyle(color: kNavAbleText, fontSize: 10),
+                  location.address,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: kNavAbleText, fontSize: 10),
                 ),
-                SizedBox(height: 5),
+                const SizedBox(height: 5),
                 Wrap(
                   spacing: 5,
                   children: [
-                    _PlaceTag(label: 'RAMP'),
-                    _PlaceTag(label: 'LIFT'),
+                    for (final feature in location.features.take(3))
+                      _PlaceTag(label: feature.toUpperCase()),
                   ],
                 ),
               ],
             ),
           ),
-          const _RatingBadge(),
+          if (location.rating != null) _RatingBadge(rating: location.rating!),
+          IconButton(
+            tooltip: 'Submit accessibility photos for ${location.name}',
+            onPressed: onAddPhoto,
+            icon: const Icon(Icons.add_a_photo_outlined),
+            color: kNavAbleNavy,
+            visualDensity: VisualDensity.compact,
+          ),
           IconButton(
             tooltip: 'Save destination',
             onPressed: onSave,
             icon: const Icon(Icons.bookmark_border_rounded),
             color: kNavAbleNavy,
             visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NearbyLocationMessage extends StatelessWidget {
+  const _NearbyLocationMessage({required this.loading, this.error});
+
+  final bool loading;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    return NavAbleSurface(
+      width: double.infinity,
+      color: Colors.white,
+      child: Row(
+        children: [
+          if (loading)
+            const SizedBox.square(
+              dimension: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            const Icon(Icons.location_searching_rounded, color: kNavAbleNavy),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              loading
+                  ? 'Loading accessible locations…'
+                  : error ?? 'No accessible locations are available yet.',
+              style: const TextStyle(color: kNavAbleText, fontSize: 12),
+            ),
           ),
         ],
       ),
@@ -658,7 +1004,9 @@ class _PlaceTag extends StatelessWidget {
 }
 
 class _RatingBadge extends StatelessWidget {
-  const _RatingBadge();
+  const _RatingBadge({required this.rating});
+
+  final double rating;
 
   @override
   Widget build(BuildContext context) {
@@ -668,14 +1016,14 @@ class _RatingBadge extends StatelessWidget {
         color: const Color(0xFF9AF5AE),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.star_rounded, color: kNavAbleNavy, size: 14),
           SizedBox(width: 3),
           Text(
-            '4.9',
-            style: TextStyle(
+            rating.toStringAsFixed(1),
+            style: const TextStyle(
               color: kNavAbleNavy,
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -688,9 +1036,10 @@ class _RatingBadge extends StatelessWidget {
 }
 
 class _StartNavigationButton extends StatelessWidget {
-  const _StartNavigationButton({required this.onPressed});
+  const _StartNavigationButton({required this.onPressed, this.loading = false});
 
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -705,10 +1054,18 @@ class _StartNavigationButton extends StatelessWidget {
           elevation: 6,
           shape: const StadiumBorder(),
         ),
-        icon: const Icon(Icons.navigation_rounded, size: 20),
-        label: const Text(
-          'Start Navigation',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        icon: loading
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.navigation_rounded, size: 20),
+        label: Text(
+          loading ? 'Finding Route…' : 'Start Navigation',
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
         ),
       ),
     );
