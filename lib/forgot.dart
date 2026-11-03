@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'navable_design.dart';
 
-import 'auth_service.dart';
+import 'services/auth_service.dart';
 
 const Color _navAbleNavy = NavAblePalette.navy;
 const Color _navAbleGreen = NavAblePalette.green;
@@ -18,6 +18,7 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     with SingleTickerProviderStateMixin {
+  final _authService = AuthService();
   final TextEditingController _emailController = TextEditingController();
   late final AnimationController _controller;
   late final Animation<double> _fadeAnimation;
@@ -49,7 +50,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   }
 
   Future<void> _sendResetLink() async {
-    final message = await AuthService.resetPassword(_emailController.text);
+    final message = await _authService.resetPassword(_emailController.text);
     if (!mounted) return;
 
     ScaffoldMessenger.of(
@@ -65,112 +66,119 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _PremiumBackground(
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                    child: FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: SlideTransition(
-                        position: _slideAnimation,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: _BackButton(
-                                onPressed: () =>
-                                    Navigator.of(context).maybePop(),
+    return NavAbleLightTheme(
+      child: Scaffold(
+        body: _PremiumBackground(
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                      child: FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: SlideTransition(
+                          position: _slideAnimation,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: _BackButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).maybePop(),
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 30),
-                            const _ResetIcon(),
-                            const SizedBox(height: 24),
-                            const Text(
-                              'Forgot Password?',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: _navAbleNavy,
-                                fontSize: 25,
-                                height: 1.18,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 322),
-                              child: Text(
-                                'No worries! Enter the email address associated with your NavAble account and we will send a secure reset link.',
+                              const SizedBox(height: 30),
+                              const _ResetIcon(),
+                              const SizedBox(height: 24),
+                              const Text(
+                                'Forgot Password?',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: _navAbleText,
-                                  fontSize: 14,
-                                  height: 1.6,
+                                  color: _navAbleNavy,
+                                  fontSize: 25,
+                                  height: 1.18,
+                                  fontWeight: FontWeight.w800,
                                   letterSpacing: 0,
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 30),
-                            _PremiumCard(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _EmailResetField(
-                                    controller: _emailController,
+                              const SizedBox(height: 12),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 322,
+                                ),
+                                child: Text(
+                                  'No worries! Enter the email address associated with your NavAble account and we will send a secure reset link.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _navAbleText,
+                                    fontSize: 14,
+                                    height: 1.6,
+                                    letterSpacing: 0,
                                   ),
-                                  const SizedBox(height: 14),
-                                  const _SecurityNotice(),
-                                  const SizedBox(height: 28),
-                                  _PrimaryButton(
-                                    label: 'Send Reset Link',
-                                    onPressed: _sendResetLink,
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 28),
-                            const Text(
-                              'Still having trouble accessing your account?',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Color(0xFF344054),
-                                fontSize: 14,
-                                letterSpacing: 0,
+                              const SizedBox(height: 30),
+                              _PremiumCard(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _EmailResetField(
+                                      controller: _emailController,
+                                    ),
+                                    const SizedBox(height: 14),
+                                    const _SecurityNotice(),
+                                    const SizedBox(height: 28),
+                                    _PrimaryButton(
+                                      label: 'Send Reset Link',
+                                      onPressed: _sendResetLink,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 14),
-                            _SupportAction(
-                              icon: Icons.support_agent_rounded,
-                              label: 'Contact Accessibility Support',
-                              color: _navAbleGreen,
-                              onPressed: () =>
-                                  _showSupportMessage('Accessibility support'),
-                            ),
-                            const SizedBox(height: 10),
-                            _SupportAction(
-                              icon: Icons.help_outline_rounded,
-                              label: 'Visit Help Center',
-                              color: _navAbleNavy,
-                              onPressed: () =>
-                                  _showSupportMessage('Help Center'),
-                            ),
-                            const SizedBox(height: 26),
-                            const _HelpNotice(),
-                          ],
+                              const SizedBox(height: 28),
+                              const Text(
+                                'Still having trouble accessing your account?',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Color(0xFF344054),
+                                  fontSize: 14,
+                                  letterSpacing: 0,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              _SupportAction(
+                                icon: Icons.support_agent_rounded,
+                                label: 'Contact Accessibility Support',
+                                color: _navAbleGreen,
+                                onPressed: () => _showSupportMessage(
+                                  'Accessibility support',
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              _SupportAction(
+                                icon: Icons.help_outline_rounded,
+                                label: 'Visit Help Center',
+                                color: _navAbleNavy,
+                                onPressed: () =>
+                                    _showSupportMessage('Help Center'),
+                              ),
+                              const SizedBox(height: 26),
+                              const _HelpNotice(),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),

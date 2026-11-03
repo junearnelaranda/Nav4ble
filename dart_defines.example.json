@@ -1,0 +1,5 @@
+{
+  "SUPABASE_URL": "https://<project-ref>.supabase.co",
+  "SUPABASE_PUBLISHABLE_KEY": "<publishable-key>",
+  "NAVABLE_REPORTS_API_URL": "https://navable-accessibility-ai.<your-subdomain>.workers.dev"
+}

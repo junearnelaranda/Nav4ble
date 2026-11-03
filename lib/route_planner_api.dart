@@ -50,6 +50,9 @@ class PlannedRoute {
   String get summary =>
       '${mode.label} route to $destinationName · ${_formatDistance(distanceMeters)} · ${_formatDuration(durationSeconds)}';
 
+  /// Short text for the route card on the map: just the distance.
+  String get distanceLabel => 'Distance: ${_formatDistance(distanceMeters)}';
+
   static String _formatDistance(double meters) => meters >= 1000
       ? '${(meters / 1000).toStringAsFixed(1)} km'
       : '${meters.round()} m';
@@ -66,12 +69,33 @@ class PlaceSearchResult {
     required this.name,
     required this.displayName,
     required this.point,
+    this.accessibility,
   });
 
   final String name;
   final String displayName;
   final LatLng point;
+
+  /// What's known about its accessibility (NavAble features, or the
+  /// OpenStreetMap wheelchair tag); null when nothing is known yet.
+  final String? accessibility;
+
+  bool get isAccessible => accessibility != null;
+
+  PlaceSearchResult withAccessibility(String? value) => PlaceSearchResult(
+    name: name,
+    displayName: displayName,
+    point: point,
+    accessibility: value,
+  );
 }
+
+/// OpenStreetMap's wheelchair tag as a short label; null when unknown or "no".
+String? wheelchairLabel(Object? tag) => switch (tag) {
+  'yes' || 'designated' => 'Wheelchair accessible',
+  'limited' => 'Partly wheelchair accessible',
+  _ => null,
+};
 
 class RoutePlannerApi {
   RoutePlannerApi._();
@@ -84,16 +108,141 @@ class RoutePlannerApi {
   static final Map<String, List<PlaceSearchResult>> _searchCache = {};
   static DateTime? _lastPublicRequest;
 
+  static const _photonEndpoint = 'https://photon.komoot.io/api/';
+  static final Map<String, List<PlaceSearchResult>> _suggestCache = {};
+
+  /// Category words mapped to OpenStreetMap tags, so typing "mall" suggests
+  /// malls rather than streets that happen to be named "Mall...".
+  static const _categoryTags = {
+    'mall': 'shop:mall',
+    'malls': 'shop:mall',
+    'cafe': 'amenity:cafe',
+    'cafes': 'amenity:cafe',
+    'coffee': 'amenity:cafe',
+    'restaurant': 'amenity:restaurant',
+    'restaurants': 'amenity:restaurant',
+    'hospital': 'amenity:hospital',
+    'hospitals': 'amenity:hospital',
+    'pharmacy': 'amenity:pharmacy',
+    'pharmacies': 'amenity:pharmacy',
+    'bank': 'amenity:bank',
+    'banks': 'amenity:bank',
+    'school': 'amenity:school',
+    'schools': 'amenity:school',
+    'hotel': 'tourism:hotel',
+    'hotels': 'tourism:hotel',
+    'church': 'amenity:place_of_worship',
+    'churches': 'amenity:place_of_worship',
+    'supermarket': 'shop:supermarket',
+    'supermarkets': 'shop:supermarket',
+  };
+
+  /// Suggestions while the user types, within [reach] degrees of [near]
+  /// (0.1 is about 11 km). Uses Photon, OpenStreetMap search built for
+  /// search-as-you-type; Nominatim's usage policy forbids autocomplete.
+  static Future<List<PlaceSearchResult>> suggestPlaces({
+    required String query,
+    required LatLng near,
+    double reach = 0.1,
+  }) async {
+    final normalizedQuery = _normalize(query);
+    if (normalizedQuery.length < 2) return const [];
+    final key =
+        '$normalizedQuery:${near.latitude.toStringAsFixed(2)},${near.longitude.toStringAsFixed(2)}:$reach';
+    final cached = _suggestCache[key];
+    if (cached != null) return cached;
+
+    final tag = _categoryTags[normalizedQuery];
+    final uri = Uri.parse(_photonEndpoint).replace(
+      queryParameters: {
+        'q': query.trim(),
+        'lat': '${near.latitude}',
+        'lon': '${near.longitude}',
+        'bbox':
+            '${near.longitude - reach},${near.latitude - reach},${near.longitude + reach},${near.latitude + reach}',
+        'limit': '10',
+        'lang': 'en',
+        'osm_tag': ?tag,
+      },
+    );
+    try {
+      final response = await http
+          .get(uri, headers: const {'User-Agent': _userAgent})
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw RoutePlannerException(
+          'Place suggestions returned HTTP ${response.statusCode}.',
+        );
+      }
+      final results = parsePhotonResults(response.body);
+      _suggestCache[key] = results;
+      return results;
+    } on RoutePlannerException {
+      rethrow;
+    } on Exception catch (error) {
+      throw RoutePlannerException('Could not load place suggestions: $error');
+    }
+  }
+
+  /// Reads a Photon GeoJSON response. Land-use areas go last, as in
+  /// [searchPlaces], so the real place wins when names repeat.
+  static List<PlaceSearchResult> parsePhotonResults(String body) {
+    final decoded = jsonDecode(body);
+    final features = decoded is Map ? decoded['features'] : null;
+    if (features is! List) return const [];
+    final results = <PlaceSearchResult>[];
+    final areaResults = <PlaceSearchResult>[];
+    for (final feature in features.whereType<Map>()) {
+      final properties = feature['properties'];
+      final coordinates = (feature['geometry'] as Map?)?['coordinates'];
+      if (properties is! Map ||
+          coordinates is! List ||
+          coordinates.length < 2) {
+        continue;
+      }
+      final longitude = (coordinates[0] as num?)?.toDouble();
+      final latitude = (coordinates[1] as num?)?.toDouble();
+      final name = properties['name']?.toString().trim() ?? '';
+      if (latitude == null || longitude == null || name.isEmpty) continue;
+      final street = [
+        properties['housenumber'],
+        properties['street'],
+      ].whereType<Object>().join(' ');
+      final address = <String>[
+        if (street.isNotEmpty) street,
+        for (final part in [
+          properties['district'] ?? properties['locality'],
+          properties['city'],
+        ])
+          if (part != null && part.toString().isNotEmpty) part.toString(),
+      ].join(', ');
+      final key = properties['osm_key'];
+      (key == 'landuse' || key == 'boundary' ? areaResults : results).add(
+        PlaceSearchResult(
+          name: name,
+          displayName: address.isEmpty ? name : address,
+          point: LatLng(latitude, longitude),
+        ),
+      );
+    }
+    return List.unmodifiable([...results, ...areaResults]);
+  }
+
   /// Searches only when the user submits a query; Nominatim does not permit
   /// client-side autocomplete against its public service.
+  ///
+  /// [reach] is the search box's half-size in degrees (0.05 is about
+  /// 5 km); [bounded] drops results outside it instead of just preferring it.
   static Future<List<PlaceSearchResult>> searchPlaces({
     required String query,
     required LatLng near,
+    double reach = 0.2,
+    bool bounded = false,
   }) async {
     final normalizedQuery = _normalize(query);
     if (normalizedQuery.isEmpty) return const [];
     final key =
-        '$normalizedQuery:${near.latitude.toStringAsFixed(2)},${near.longitude.toStringAsFixed(2)}';
+        '$normalizedQuery:${near.latitude.toStringAsFixed(2)},${near.longitude.toStringAsFixed(2)}:$reach:$bounded';
     final cached = _searchCache[key];
     if (cached != null) return cached;
 
@@ -101,18 +250,26 @@ class RoutePlannerApi {
       queryParameters: {
         'q': query,
         'format': 'jsonv2',
-        'limit': '5',
+        'limit': '15',
         'addressdetails': '1',
+        'extratags': '1', // includes the wheelchair tag
         'viewbox':
-            '${near.longitude - 0.2},${near.latitude + 0.2},${near.longitude + 0.2},${near.latitude - 0.2}',
+            '${near.longitude - reach},${near.latitude + reach},${near.longitude + reach},${near.latitude - reach}',
+        if (bounded) 'bounded': '1',
       },
     );
     final response = await _get(uri);
     final decoded = jsonDecode(response.body);
     if (decoded is! List) {
-      throw const RoutePlannerException('The place search returned invalid results.');
+      throw const RoutePlannerException(
+        'The place search returned invalid results.',
+      );
     }
     final results = <PlaceSearchResult>[];
+    // Land-use areas and boundaries often share the name of the real place
+    // (e.g. a mall's whole lot), but their center can be far from it. Listing
+    // them last means "first result" and duplicate-name filtering keep the place.
+    final areaResults = <PlaceSearchResult>[];
     for (final item in decoded.whereType<Map>()) {
       final place = Map<String, dynamic>.from(item);
       final latitude = double.tryParse(place['lat']?.toString() ?? '');
@@ -120,14 +277,22 @@ class RoutePlannerApi {
       if (latitude == null || longitude == null) continue;
       final displayName = place['display_name']?.toString() ?? query;
       final name = place['name']?.toString().trim();
-      results.add(
-        PlaceSearchResult(
-          name: name == null || name.isEmpty ? displayName.split(',').first : name,
-          displayName: displayName,
-          point: LatLng(latitude, longitude),
-        ),
-      );
+      final category = place['category']?.toString();
+      (category == 'landuse' || category == 'boundary' ? areaResults : results)
+          .add(
+            PlaceSearchResult(
+              name: name == null || name.isEmpty
+                  ? displayName.split(',').first
+                  : name,
+              displayName: displayName,
+              point: LatLng(latitude, longitude),
+              accessibility: wheelchairLabel(
+                (place['extratags'] as Map?)?['wheelchair'],
+              ),
+            ),
+          );
     }
+    results.addAll(areaResults);
     _searchCache[key] = List.unmodifiable(results);
     return _searchCache[key]!;
   }
@@ -165,15 +330,16 @@ class RoutePlannerApi {
       TravelMode.walking => 'routed-foot',
       TravelMode.car || TravelMode.motorcycle => 'routed-car',
     };
-    final uri = Uri.parse(
-      '$_routingEndpoint/$profile/route/v1/driving/$coordinates',
-    ).replace(
-      queryParameters: const {
-        'overview': 'full',
-        'geometries': 'geojson',
-        'steps': 'true',
-      },
-    );
+    final uri =
+        Uri.parse(
+          '$_routingEndpoint/$profile/route/v1/driving/$coordinates',
+        ).replace(
+          queryParameters: const {
+            'overview': 'full',
+            'geometries': 'geojson',
+            'steps': 'true',
+          },
+        );
     final response = await _get(uri);
     final body = _decodeObject(
       response,

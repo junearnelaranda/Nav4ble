@@ -1,11 +1,11 @@
 import { readFile } from 'node:fs/promises';
 
 const workerUrl = process.env.NAVABLE_WORKER_URL?.replace(/\/$/, '');
-const firebaseToken = process.env.FIREBASE_ID_TOKEN;
+const accessToken = process.env.SUPABASE_ACCESS_TOKEN;
 const imagePath = process.argv[2];
 
-if (!workerUrl || !firebaseToken || !imagePath) {
-  console.error('Usage: set NAVABLE_WORKER_URL and FIREBASE_ID_TOKEN, then run: node scripts/smoke.js <sample-image>');
+if (!workerUrl || !accessToken || !imagePath) {
+  console.error('Usage: set NAVABLE_WORKER_URL and SUPABASE_ACCESS_TOKEN, then run: node scripts/smoke.js <sample-image>');
   process.exit(2);
 }
 
@@ -18,7 +18,7 @@ const imageBase64 = imageBytes.toString('base64');
 const response = await fetch(`${workerUrl}/infer`, {
   method: 'POST',
   headers: {
-    Authorization: `Bearer ${firebaseToken}`,
+    Authorization: `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({ inputs: { image: { type: 'base64', value: imageBase64 } } }),

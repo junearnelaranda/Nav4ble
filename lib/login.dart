@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
-import 'auth_service.dart';
+import 'services/auth_service.dart';
 import 'forgot.dart';
 import 'home.dart';
 import 'navable_design.dart';
@@ -21,6 +22,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
+  final _authService = AuthService();
   bool _rememberDevice = false;
   bool _obscurePassword = true;
   final TextEditingController _emailController = TextEditingController();
@@ -79,7 +81,13 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => _isLoading = true);
     AuthResult result;
     try {
-      result = await AuthService.login(email: email, password: password);
+      await _authService.login(email: email, password: password);
+      result = const AuthResult(isSuccess: true);
+    } on AuthException catch (error) {
+      result = AuthResult(
+        isSuccess: false,
+        message: AuthService.messageFor(error),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -93,8 +101,9 @@ class _LoginScreenState extends State<LoginScreen>
 
     if (!result.isSuccess) {
       final message = result.message ?? 'Login failed. Please try again.';
-      final credentialsRejected =
-          message.toLowerCase().contains('email or password is incorrect');
+      final credentialsRejected = message.toLowerCase().contains(
+        'email or password is incorrect',
+      );
       setState(() {
         _loginError = credentialsRejected
             ? 'Email or password is incorrect. Check both fields and try again.'
@@ -117,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _continueAsGuest() async {
-    await AuthService.signOut();
+    await _authService.logout();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       _fadeRoute(const SplashScreen(nextScreen: HomeScreen(isGuest: true))),
@@ -126,267 +135,278 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _PremiumBackground(
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 36, 24, 24),
-                    child: FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: SlideTransition(
-                        position: _slideAnimation,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Image.asset(
-                              'lib/img/logOnly.png',
-                              width: 118,
-                              fit: BoxFit.contain,
-                            ),
-                            const SizedBox(height: 18),
-                            const Text.rich(
-                              TextSpan(
-                                text: 'Nav',
-                                children: [
-                                  TextSpan(
-                                    text: 'Able',
-                                    style: TextStyle(color: kNavAbleGreen),
-                                  ),
-                                ],
+    return NavAbleLightTheme(
+      child: Scaffold(
+        body: _PremiumBackground(
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 36, 24, 24),
+                      child: FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: SlideTransition(
+                          position: _slideAnimation,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Image.asset(
+                                'lib/img/logOnly.png',
+                                width: 118,
+                                fit: BoxFit.contain,
                               ),
-                              style: TextStyle(
-                                color: kNavAbleNavy,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Smart Navigation for Every Ability',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: kNavAbleText,
-                                fontSize: 14,
-                                height: 1.5,
-                                letterSpacing: 0,
-                              ),
-                            ),
-                            const SizedBox(height: 30),
-                            _PremiumCard(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (_loginError != null) ...[
-                                    _LoginErrorBanner(message: _loginError!),
-                                    const SizedBox(height: 16),
+                              const SizedBox(height: 18),
+                              const Text.rich(
+                                TextSpan(
+                                  text: 'Nav',
+                                  children: [
+                                    TextSpan(
+                                      text: 'Able',
+                                      style: TextStyle(color: kNavAbleGreen),
+                                    ),
                                   ],
-                                  _LoginField(
-                                    label: 'Email Address',
-                                    icon: Icons.email_outlined,
-                                    hintText: 'user@example.com',
-                                    controller: _emailController,
-                                    keyboardType: TextInputType.emailAddress,
-                                    error: _credentialsRejected ||
-                                        _emailError != null,
-                                    errorText: _emailError,
-                                    onChanged: (_) => setState(() {
-                                      _emailError = null;
-                                      _loginError = null;
-                                      _credentialsRejected = false;
-                                    }),
-                                  ),
-                                  const SizedBox(height: 20),
-                                  _LoginField(
-                                    label: 'Password',
-                                    icon: Icons.lock_outline,
-                                    hintText: '',
-                                    controller: _passwordController,
-                                    obscureText: _obscurePassword,
-                                    error: _credentialsRejected ||
-                                        _passwordError != null,
-                                    errorText: _passwordError,
-                                    onChanged: (_) => setState(() {
-                                      _passwordError = null;
-                                      _loginError = null;
-                                      _credentialsRejected = false;
-                                    }),
-                                    labelAction: TextButton(
-                                      onPressed: () {
-                                        Navigator.of(context).push(
-                                          _fadeRoute(
-                                            const ForgotPasswordScreen(),
-                                          ),
-                                        );
-                                      },
-                                      style: TextButton.styleFrom(
-                                        minimumSize: Size.zero,
-                                        padding: EdgeInsets.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                      child: const Text(
-                                        'Forgot Password?',
-                                        style: TextStyle(
-                                          color: kNavAbleGreen,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 0,
-                                        ),
-                                      ),
-                                    ),
-                                    suffixIcon: IconButton(
-                                      tooltip: _obscurePassword
-                                          ? 'Show password'
-                                          : 'Hide password',
-                                      onPressed: () {
-                                        setState(
-                                          () => _obscurePassword =
-                                              !_obscurePassword,
-                                        );
-                                      },
-                                      icon: Icon(
-                                        _obscurePassword
-                                            ? Icons.visibility_off_outlined
-                                            : Icons.visibility_outlined,
-                                        color: const Color(0xFF5F6B7A),
-                                        size: 20,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 24),
-                                  Row(
-                                    children: [
-                                      SizedBox(
-                                        width: 30,
-                                        height: 30,
-                                        child: Checkbox(
-                                          value: _rememberDevice,
-                                          onChanged: (value) {
-                                            setState(
-                                              () => _rememberDevice =
-                                                  value ?? false,
-                                            );
-                                          },
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              7,
-                                            ),
-                                          ),
-                                          side: const BorderSide(
-                                            color: Color(0xFFB8C2BE),
-                                            width: 1.5,
-                                          ),
-                                          activeColor: kNavAbleGreen,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      const Text(
-                                        'Remember this device',
-                                        style: TextStyle(
-                                          color: Color(0xFF344054),
-                                          fontSize: 14,
-                                          letterSpacing: 0,
-                                        ),
-                                      ),
+                                ),
+                                style: TextStyle(
+                                  color: kNavAbleNavy,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Smart Navigation for Every Ability',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: kNavAbleText,
+                                  fontSize: 14,
+                                  height: 1.5,
+                                  letterSpacing: 0,
+                                ),
+                              ),
+                              const SizedBox(height: 30),
+                              _PremiumCard(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (_loginError != null) ...[
+                                      _LoginErrorBanner(message: _loginError!),
+                                      const SizedBox(height: 16),
                                     ],
+                                    _LoginField(
+                                      label: 'Email Address',
+                                      icon: Icons.email_outlined,
+                                      hintText: 'user@example.com',
+                                      controller: _emailController,
+                                      keyboardType: TextInputType.emailAddress,
+                                      error:
+                                          _credentialsRejected ||
+                                          _emailError != null,
+                                      errorText: _emailError,
+                                      onChanged: (_) => setState(() {
+                                        _emailError = null;
+                                        _loginError = null;
+                                        _credentialsRejected = false;
+                                      }),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    _LoginField(
+                                      label: 'Password',
+                                      icon: Icons.lock_outline,
+                                      hintText: '',
+                                      controller: _passwordController,
+                                      obscureText: _obscurePassword,
+                                      error:
+                                          _credentialsRejected ||
+                                          _passwordError != null,
+                                      errorText: _passwordError,
+                                      onChanged: (_) => setState(() {
+                                        _passwordError = null;
+                                        _loginError = null;
+                                        _credentialsRejected = false;
+                                      }),
+                                      labelAction: TextButton(
+                                        onPressed: () {
+                                          Navigator.of(context).push(
+                                            _fadeRoute(
+                                              const ForgotPasswordScreen(),
+                                            ),
+                                          );
+                                        },
+                                        style: TextButton.styleFrom(
+                                          minimumSize: Size.zero,
+                                          padding: EdgeInsets.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        child: const Text(
+                                          'Forgot Password?',
+                                          style: TextStyle(
+                                            color: kNavAbleGreen,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0,
+                                          ),
+                                        ),
+                                      ),
+                                      suffixIcon: IconButton(
+                                        tooltip: _obscurePassword
+                                            ? 'Show password'
+                                            : 'Hide password',
+                                        onPressed: () {
+                                          setState(
+                                            () => _obscurePassword =
+                                                !_obscurePassword,
+                                          );
+                                        },
+                                        icon: Icon(
+                                          _obscurePassword
+                                              ? Icons.visibility_off_outlined
+                                              : Icons.visibility_outlined,
+                                          color: const Color(0xFF5F6B7A),
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    Row(
+                                      children: [
+                                        SizedBox(
+                                          width: 30,
+                                          height: 30,
+                                          child: Checkbox(
+                                            value: _rememberDevice,
+                                            onChanged: (value) {
+                                              setState(
+                                                () => _rememberDevice =
+                                                    value ?? false,
+                                              );
+                                            },
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(7),
+                                            ),
+                                            side: const BorderSide(
+                                              color: Color(0xFFB8C2BE),
+                                              width: 1.5,
+                                            ),
+                                            activeColor: kNavAbleGreen,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        const Text(
+                                          'Remember this device',
+                                          style: TextStyle(
+                                            color: Color(0xFF344054),
+                                            fontSize: 14,
+                                            letterSpacing: 0,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 28),
+                                    _PrimaryButton(
+                                      label: _isLoading
+                                          ? 'Signing in…'
+                                          : 'Login',
+                                      onPressed: _login,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              const _DividerLabel(),
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                width: double.infinity,
+                                height: NavAbleSize.primaryButton,
+                                child: OutlinedButton.icon(
+                                  onPressed: _isLoading
+                                      ? null
+                                      : _continueAsGuest,
+                                  icon: const Icon(
+                                    Icons.person_outline_rounded,
                                   ),
-                                  const SizedBox(height: 28),
-                                  _PrimaryButton(
-                                    label: _isLoading ? 'Signing in…' : 'Login',
-                                    onPressed: _login,
+                                  label: const Text('Continue as a Guest'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: kNavAbleNavy,
+                                    side: const BorderSide(
+                                      color: kNavAbleGreen,
+                                      width: 1.5,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 22),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _RoundIconButton(
+                                    icon: Icons.fingerprint,
+                                    onPressed: () =>
+                                        _showProviderPlaceholder('Fingerprint'),
+                                  ),
+                                  const SizedBox(width: 18),
+                                  _RoundIconButton(
+                                    icon: Icons.face,
+                                    onPressed: () =>
+                                        _showProviderPlaceholder('Face ID'),
                                   ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(height: 24),
-                            const _DividerLabel(),
-                            const SizedBox(height: 20),
-                            SizedBox(
-                              width: double.infinity,
-                              height: NavAbleSize.primaryButton,
-                              child: OutlinedButton.icon(
-                                onPressed: _isLoading ? null : _continueAsGuest,
-                                icon: const Icon(Icons.person_outline_rounded),
-                                label: const Text('Continue as a Guest'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: kNavAbleNavy,
-                                  side: const BorderSide(
-                                    color: kNavAbleGreen,
-                                    width: 1.5,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 22),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _RoundIconButton(
-                                  icon: Icons.fingerprint,
-                                  onPressed: () =>
-                                      _showProviderPlaceholder('Fingerprint'),
-                                ),
-                                const SizedBox(width: 18),
-                                _RoundIconButton(
-                                  icon: Icons.face,
-                                  onPressed: () =>
-                                      _showProviderPlaceholder('Face ID'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 28),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Text(
-                                  'New to NavAble? ',
-                                  style: TextStyle(
-                                    color: Color(0xFF344054),
-                                    fontSize: 14,
-                                    letterSpacing: 0,
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    Navigator.of(
-                                      context,
-                                    ).push(_fadeRoute(const RegisterScreen()));
-                                  },
-                                  style: TextButton.styleFrom(
-                                    minimumSize: Size.zero,
-                                    padding: EdgeInsets.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  child: const Text(
-                                    'Register Account',
+                              const SizedBox(height: 28),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Text(
+                                    'New to NavAble? ',
                                     style: TextStyle(
-                                      color: kNavAbleGreen,
+                                      color: Color(0xFF344054),
                                       fontSize: 14,
-                                      fontWeight: FontWeight.w800,
                                       letterSpacing: 0,
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                        _fadeRoute(const RegisterScreen()),
+                                      );
+                                    },
+                                    style: TextButton.styleFrom(
+                                      minimumSize: Size.zero,
+                                      padding: EdgeInsets.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: const Text(
+                                      'Register Account',
+                                      style: TextStyle(
+                                        color: kNavAbleGreen,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -614,9 +634,7 @@ class _LoginField extends StatelessWidget {
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(
-                  color: error
-                      ? const Color(0xFFD92D20)
-                      : kNavAbleGreen,
+                  color: error ? const Color(0xFFD92D20) : kNavAbleGreen,
                   width: 1.5,
                 ),
               ),

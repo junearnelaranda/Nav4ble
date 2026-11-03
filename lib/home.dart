@@ -6,11 +6,16 @@ import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart' as osm;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show AuthChangeEvent, AuthState, Supabase;
 
-import 'auth_service.dart';
+import 'services/auth_service.dart';
+import 'services/google_maps_launcher.dart';
 import 'login.dart';
 import 'navable_design.dart';
+import 'accessibility_filters.dart';
 import 'locations_api.dart';
+import 'places_api.dart';
 import 'profile_stats_api.dart';
 import 'reports_api.dart';
 import 'route_planner_api.dart';
@@ -23,6 +28,8 @@ part 'screens/alerts_tab.dart';
 part 'screens/profile_tab.dart';
 part 'screens/settings_screen.dart';
 part 'screens/submissions_screen.dart';
+part 'screens/report_result_screens.dart';
+part 'screens/bug_report_screen.dart';
 part 'widgets/open_street_map_view.dart';
 
 enum _ProfilePhotoAction { camera, gallery, remove }
@@ -36,12 +43,15 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  final _authService = AuthService();
   final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _exploreSearchController =
       TextEditingController();
   int _selectedIndex = 0;
   AccessibleLocation? _pendingPhotoLocation;
+  _ReportKind? _reportKind; // null: Reports tab opens on the two choices
+  GooglePlace? _pendingGooglePlace; // Google place to contribute to
   int _photoCaptureRequestId = 0;
   AccessibleLocation? _selectedMapLocation;
   List<AccessibleLocation> _accessibleLocations = const [];
@@ -55,17 +65,24 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _accessibleToilet = false;
   bool _tactilePaving = false;
   bool _audioAssistance = false;
+  bool _accessibleParking = false;
+  bool _wheelchairSeating = false;
   bool _voiceGuidance = true;
   bool _routing = false;
   PlannedRoute? _walkingRoute;
   String? _routeStatus;
-  TravelMode _travelMode = TravelMode.walking;
-  final Map<TravelMode, double> _routeDurations = {};
-  int _routeEstimateGeneration = 0;
   bool _destinationSelected = false;
   List<PlaceSearchResult> _placeSearchResults = const [];
+  // Last search's places, kept on the map as green/red pins.
+  List<PlaceSearchResult> _resultPins = const [];
   PlaceSearchResult? _searchedPlace;
   bool _placeSearching = false;
+  // Suggestions while typing: debounce timer, and a counter so a slow,
+  // older answer never replaces a newer one.
+  Timer? _suggestTimer;
+  int _suggestRequest = 0;
+  osm.LatLng? _userPosition;
+  bool _triedUserPosition = false;
 
   final List<SavedPlace> _savedPlaces = [];
 
@@ -73,11 +90,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<AccessibilitySubmission> _submissions = [];
 
+  StreamSubscription<AuthState>? _authSubscription;
+  bool _signingOut = false;
+
+  DateTime _locationsLoadedAt = DateTime.now();
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAccessibleLocations();
     _loadProfileStats();
+    if (!widget.isGuest) {
+      // If the sign-in ends on its own (for example it expired and couldn't
+      // renew while offline), go back to login instead of leaving the user
+      // on signed-in screens that can no longer scan or submit.
+      _authSubscription = Supabase.instance.client.auth.onAuthStateChange
+          .listen((state) {
+            if (state.event == AuthChangeEvent.signedOut && !_signingOut) {
+              _returnToLogin();
+            }
+          });
+    }
+  }
+
+  void _returnToLogin() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Your sign-in expired. Please sign in again.'),
+      ),
+    );
   }
 
   Future<void> _loadProfileStats() async {
@@ -94,33 +142,57 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadAccessibleLocations() async {
+  /// Coming back to the app picks up what admins changed meanwhile
+  /// (new places, photos, features), at most once a minute.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        DateTime.now().difference(_locationsLoadedAt) >
+            const Duration(minutes: 1)) {
+      _loadAccessibleLocations(refresh: true);
+    }
+  }
+
+  /// [refresh] reloads quietly: keeps the current list and selection if the
+  /// reload fails, and doesn't jump to the first place.
+  Future<void> _loadAccessibleLocations({bool refresh = false}) async {
+    _locationsLoadedAt = DateTime.now();
     try {
       final locations = await LocationsApi.getAccessibleLocations();
       if (!mounted) return;
       setState(() {
         _accessibleLocations = locations;
-        _selectedMapLocation = locations.isEmpty ? null : locations.first;
+        if (!refresh) {
+          _selectedMapLocation = locations.isEmpty ? null : locations.first;
+        } else if (_selectedMapLocation case final selected?) {
+          // Same place, with its updated photo and features.
+          _selectedMapLocation = locations
+              .where((l) => l.id == selected.id)
+              .firstOrNull;
+        }
         _locationsLoading = false;
         _locationsError = null;
       });
     } on LocationsApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted || refresh) return;
       setState(() {
         _locationsLoading = false;
         _locationsError = error.message;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || refresh) return;
       setState(() {
         _locationsLoading = false;
-        _locationsError = 'Could not load accessible locations from Firestore.';
+        _locationsError = 'Could not load accessible locations from Supabase.';
       });
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _authSubscription?.cancel();
+    _suggestTimer?.cancel();
     _destinationController.dispose();
     _exploreSearchController.dispose();
     super.dispose();
@@ -135,9 +207,30 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     setState(() {
+      _reportKind = _ReportKind.feature;
+      _pendingGooglePlace = null;
       _pendingPhotoLocation = location;
       if (location != null) _selectedMapLocation = location;
       if (openCamera) _photoCaptureRequestId++;
+      _selectedIndex = 2;
+    });
+  }
+
+  /// "Add accessibility info" on a Google place from Explore. A place NavAble
+  /// already has is contributed to directly; a new one becomes a suggestion.
+  void _contributeToGooglePlace(GooglePlace place, AccessibleLocation? linked) {
+    if (linked != null) {
+      _startPhotoSubmission(location: linked);
+      return;
+    }
+    if (widget.isGuest) {
+      _showMessage('Sign in to add accessibility information.');
+      return;
+    }
+    setState(() {
+      _reportKind = _ReportKind.feature;
+      _pendingPhotoLocation = null;
+      _pendingGooglePlace = place;
       _selectedIndex = 2;
     });
   }
@@ -147,7 +240,10 @@ class _HomeScreenState extends State<HomeScreen> {
       _showMessage('Sign in to view and submit reports.');
       return;
     }
-    setState(() => _selectedIndex = 2);
+    setState(() {
+      _reportKind = _ReportKind.issue;
+      _selectedIndex = 2;
+    });
   }
 
   void _selectMapLocation(AccessibleLocation location) {
@@ -158,24 +254,140 @@ class _HomeScreenState extends State<HomeScreen> {
       _searchedPlace = null;
       _walkingRoute = null;
       _routeStatus = null;
-      _routeDurations.clear();
-      _routeEstimateGeneration++;
     });
   }
 
   void _onDestinationChanged(String value) {
-    if (!_destinationSelected) return;
-    final selectedName = _searchedPlace?.name ?? _selectedMapLocation?.name;
-    if (value.trim() == selectedName) return;
+    final text = value.trim();
+    if (text.isEmpty && _resultPins.isNotEmpty) {
+      setState(() => _resultPins = const []);
+    }
+    if (_destinationSelected) {
+      final selectedName = _searchedPlace?.name ?? _selectedMapLocation?.name;
+      if (text == selectedName) return;
+      setState(() {
+        _destinationSelected = false;
+        _searchedPlace = null;
+        _placeSearchResults = const [];
+        _walkingRoute = null;
+        _routeStatus = null;
+      });
+    }
+    // Suggest places as the user types, once they pause briefly.
+    _suggestTimer?.cancel();
+    _suggestRequest++;
+    if (text.replaceAll(_nearMePattern, ' ').trim().length < 2) {
+      if (_placeSearchResults.isNotEmpty && !_placeSearching) {
+        setState(() => _placeSearchResults = const []);
+      }
+      return;
+    }
+    _suggestTimer = Timer(
+      const Duration(milliseconds: 350),
+      () => _suggestPlaces(text),
+    );
+  }
+
+  /// Hides the suggestion list and the keyboard; result pins stay.
+  void _dismissSuggestions() {
+    _suggestTimer?.cancel();
+    _suggestRequest++; // a suggestion still loading won't reopen the list
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (_placeSearchResults.isNotEmpty && !_placeSearching) {
+      setState(() => _placeSearchResults = const []);
+    }
+  }
+
+  /// Tapping the search bar again brings back suggestions for its text.
+  void _showSuggestionsAgain() {
+    if (_placeSearchResults.isEmpty && !_placeSearching) {
+      _onDestinationChanged(_destinationController.text);
+    }
+  }
+
+  Future<void> _suggestPlaces(String text) async {
+    final request = ++_suggestRequest;
+    final searchText = text.replaceAll(_nearMePattern, ' ').trim();
+    if (!_triedUserPosition) {
+      _triedUserPosition = true;
+      _userPosition = await _currentPositionOrNull();
+    }
+    final center = _userPosition ?? _searchedPlace?.point ?? _cebuMapCenter;
+    var places = const <PlaceSearchResult>[];
+    try {
+      places = await RoutePlannerApi.suggestPlaces(
+        query: searchText,
+        near: center,
+      );
+    } catch (_) {
+      // Suggestions are a convenience; Enter still runs the full search.
+    }
+    if (!mounted ||
+        request != _suggestRequest ||
+        _placeSearching ||
+        _destinationSelected) {
+      return;
+    }
     setState(() {
-      _destinationSelected = false;
-      _searchedPlace = null;
-      _placeSearchResults = const [];
-      _walkingRoute = null;
-      _routeStatus = null;
-      _routeDurations.clear();
-      _routeEstimateGeneration++;
+      _placeSearchResults = _withNavAblePlaces(
+        searchText,
+        places,
+        center,
+      ).take(8).toList();
     });
+  }
+
+  /// Puts NavAble's own places that match [searchText] first, gives map
+  /// results at a NavAble place its features, sorts the rest nearest to
+  /// [origin] first, and drops repeated names.
+  List<PlaceSearchResult> _withNavAblePlaces(
+    String searchText,
+    List<PlaceSearchResult> mapResults,
+    osm.LatLng origin,
+  ) {
+    double distance(PlaceSearchResult p) =>
+        (p.point.latitude - origin.latitude).abs() +
+        (p.point.longitude - origin.longitude).abs();
+    final nearestFirst = [...mapResults]
+      ..sort((a, b) => distance(a).compareTo(distance(b)));
+    final normalizedQuery = searchText.toLowerCase();
+    String? navAbleFeatures(AccessibleLocation location) =>
+        location.features.isEmpty ? null : location.features.take(3).join(', ');
+    final accessibleResults = _accessibleLocations
+        .where(
+          (location) =>
+              location.name.toLowerCase().contains(normalizedQuery) ||
+              location.address.toLowerCase().contains(normalizedQuery),
+        )
+        .map(
+          (location) => PlaceSearchResult(
+            name: location.name,
+            displayName: location.address,
+            point: osm.LatLng(location.latitude, location.longitude),
+            accessibility: navAbleFeatures(location),
+          ),
+        );
+    // A map result at a verified NavAble place takes NavAble's features.
+    PlaceSearchResult withNavAbleData(PlaceSearchResult place) {
+      for (final location in _accessibleLocations) {
+        if ((location.latitude - place.point.latitude).abs() < 0.0003 &&
+            (location.longitude - place.point.longitude).abs() < 0.0003) {
+          return place.withAccessibility(
+            navAbleFeatures(location) ?? place.accessibility,
+          );
+        }
+      }
+      return place;
+    }
+
+    final resultNames = <String>{};
+    return [
+      for (final place in [
+        ...accessibleResults,
+        ...nearestFirst.map(withNavAbleData),
+      ])
+        if (resultNames.add(place.name.toLowerCase())) place,
+    ];
   }
 
   Future<void> _planRoute() async {
@@ -194,14 +406,11 @@ class _HomeScreenState extends State<HomeScreen> {
       _destinationController.text = destination;
     }
     if (_routing) return;
-    final estimateGeneration = ++_routeEstimateGeneration;
 
     setState(() {
       _routing = true;
       _walkingRoute = null;
-      _routeDurations.clear();
-      _routeStatus =
-          'Finding a ${_travelMode.label.toLowerCase()} route to $destination…';
+      _routeStatus = 'Finding a route to $destination…';
     });
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
@@ -229,19 +438,18 @@ class _HomeScreenState extends State<HomeScreen> {
         query: destination,
         origin: osm.LatLng(position.latitude, position.longitude),
         savedLocations: _accessibleLocations,
-        mode: _travelMode,
+        // Car gives the most reliable road directions in Cebu.
+        mode: TravelMode.car,
         selectedPlace: _searchedPlace,
       );
       if (!mounted) return;
       setState(() {
         _walkingRoute = route;
-        _routeStatus = route.summary;
-        _storeRouteDuration(route);
+        _routeStatus = route.distanceLabel;
         if (route.savedLocation != null) {
           _selectedMapLocation = route.savedLocation;
         }
       });
-      unawaited(_loadAlternativeRouteEstimates(route, estimateGeneration));
     } on RoutePlannerException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -262,6 +470,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _searchPlaces() async {
     final query = _destinationController.text.trim();
     if (query.isEmpty || _placeSearching) return;
+    _suggestTimer?.cancel();
+    _suggestRequest++; // drop suggestions still on their way
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _placeSearching = true;
@@ -269,32 +479,48 @@ class _HomeScreenState extends State<HomeScreen> {
       _routeStatus = null;
     });
     try {
-      final mapResults = await RoutePlannerApi.searchPlaces(
-        query: query,
-        near: _searchedPlace?.point ?? _cebuMapCenter,
-      );
+      // "cafe near me": search "cafe" within about 3 km of the user.
+      final nearMe = _nearMePattern.hasMatch(query);
+      final searchText = query.replaceAll(_nearMePattern, ' ').trim();
+      if (searchText.isEmpty) {
+        _showMessage('Type what to look for, like "cafe near me".');
+        return;
+      }
+      // Search around the user: "mall" should mean malls nearby.
+      var center = await _currentPositionOrNull();
       if (!mounted) return;
-      final normalizedQuery = query.toLowerCase();
-      final accessibleResults = _accessibleLocations
-          .where(
-            (location) =>
-                location.name.toLowerCase().contains(normalizedQuery) ||
-                location.address.toLowerCase().contains(normalizedQuery),
-          )
-          .map(
-            (location) => PlaceSearchResult(
-              name: location.name,
-              displayName: location.address,
-              point: osm.LatLng(location.latitude, location.longitude),
-            ),
-          );
-      final resultNames = <String>{};
-      final results = <PlaceSearchResult>[
-        for (final place in [...accessibleResults, ...mapResults])
-          if (resultNames.add(place.name.toLowerCase())) place,
-      ];
-      setState(() => _placeSearchResults = results);
-      if (results.isEmpty) _showMessage('No places found. Try a more specific search.');
+      _userPosition = center ?? _userPosition;
+      if (center == null && nearMe) {
+        _showMessage(
+          'Turn on location to search near you. Showing results near '
+          'Cebu City.',
+        );
+      }
+      center ??= _searchedPlace?.point ?? _cebuMapCenter;
+      // Within ~5 km first, then ~20 km, then anywhere (for exact names
+      // farther away). "near me" stops at ~5 km.
+      var mapResults = const <PlaceSearchResult>[];
+      for (final (reach, bounded) in [
+        (0.05, true),
+        if (!nearMe) ...[(0.2, true), (0.2, false)],
+      ]) {
+        mapResults = await RoutePlannerApi.searchPlaces(
+          query: searchText,
+          near: center,
+          reach: reach,
+          bounded: bounded,
+        );
+        if (mapResults.isNotEmpty) break;
+      }
+      if (!mounted) return;
+      final results = _withNavAblePlaces(searchText, mapResults, center);
+      setState(() {
+        _placeSearchResults = results;
+        _resultPins = results;
+      });
+      if (results.isEmpty) {
+        _showMessage('No places found. Try a more specific search.');
+      }
     } on RoutePlannerException catch (error) {
       if (mounted) _showMessage(error.message);
     } catch (_) {
@@ -304,18 +530,93 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  static final _nearMePattern = RegExp(
+    r'\b(near me|nearby|around me|close to me)\b',
+    caseSensitive: false,
+  );
+
+  Future<osm.LatLng?> _currentPositionOrNull() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return null;
+      }
+      Position? position;
+      try {
+        position = await Geolocator.getLastKnownPosition();
+      } catch (_) {
+        // Not available on every platform (e.g. web).
+      }
+      position ??= await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      return osm.LatLng(position.latitude, position.longitude);
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _selectSearchedPlace(PlaceSearchResult place) {
-    _routeEstimateGeneration++;
     setState(() {
       _searchedPlace = place;
+      // Replace the previous pick so its coordinates can never be reused.
+      // Keeps the Supabase record when the result is a NavAble location.
+      _selectedMapLocation = _accessibleLocationFor(place);
       _destinationController.text = place.name;
       _placeSearchResults = const [];
       _walkingRoute = null;
-      _routeStatus = place.displayName;
+      _routeStatus = null;
       _destinationSelected = true;
-      _routeDurations.clear();
     });
     FocusManager.instance.primaryFocus?.unfocus();
+  }
+
+  AccessibleLocation? _accessibleLocationFor(PlaceSearchResult place) {
+    const tolerance = 1e-6;
+    for (final location in _accessibleLocations) {
+      if ((location.latitude - place.point.latitude).abs() < tolerance &&
+          (location.longitude - place.point.longitude).abs() < tolerance) {
+        return location;
+      }
+    }
+    return null;
+  }
+
+  /// The place shown on the details card: the latest search pick, or else
+  /// the latest marker tap. Derived on demand so it always matches the map.
+  _SelectedPlace? get _selectedPlace {
+    final searched = _searchedPlace;
+    if (searched != null) {
+      return _SelectedPlace.fromSearch(
+        searched,
+        accessibleLocation: _accessibleLocationFor(searched),
+      );
+    }
+    final location = _selectedMapLocation;
+    return location == null ? null : _SelectedPlace.fromAccessible(location);
+  }
+
+  /// Reads the selection at tap time, so the card always opens the place it
+  /// currently shows.
+  Future<void> _openSelectedPlaceInGoogleMaps() async {
+    final place = _selectedPlace;
+    final opened =
+        place != null &&
+        await GoogleMapsLauncher.openDirections(
+          latitude: place.latitude,
+          longitude: place.longitude,
+        );
+    if (!opened && mounted) {
+      _showMessage('Unable to open this location in Google Maps.');
+    }
   }
 
   void _saveAccessibleLocation(AccessibleLocation location) {
@@ -368,116 +669,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => RouteDetailsScreen(
-          route: route,
-          onModeChanged: _changeRouteMode,
-        ),
+        builder: (context) => RouteDetailsScreen(route: route),
       ),
     );
-  }
-
-  Future<PlannedRoute> _changeRouteMode(
-    PlannedRoute currentRoute,
-    TravelMode mode,
-  ) async {
-    _routeEstimateGeneration++;
-    setState(() {
-      _travelMode = mode;
-      _routing = true;
-      _routeStatus = 'Finding a ${mode.label.toLowerCase()} route…';
-    });
-    try {
-      final savedLocations = currentRoute.savedLocation == null
-          ? const <AccessibleLocation>[]
-          : [currentRoute.savedLocation!];
-      final route = await RoutePlannerApi.planRoute(
-        query: currentRoute.destinationName,
-        origin: currentRoute.origin,
-        savedLocations: savedLocations,
-        mode: mode,
-        selectedPlace: PlaceSearchResult(
-          name: currentRoute.destinationName,
-          displayName: currentRoute.destinationName,
-          point: currentRoute.destination,
-        ),
-      );
-      if (!mounted) return route;
-      setState(() {
-        _walkingRoute = route;
-        _routeStatus = route.summary;
-        _storeRouteDuration(route);
-      });
-      return route;
-    } on RoutePlannerException catch (error) {
-      if (mounted) {
-        setState(() {
-          _travelMode = currentRoute.mode;
-          _routeStatus = error.message;
-        });
-      }
-      rethrow;
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _travelMode = currentRoute.mode;
-          _routeStatus = 'Could not calculate this route: $error';
-        });
-      }
-      rethrow;
-    } finally {
-      if (mounted) setState(() => _routing = false);
-    }
-  }
-
-  void _storeRouteDuration(PlannedRoute route) {
-    _routeDurations[route.mode] = route.durationSeconds;
-    if (route.mode == TravelMode.car ||
-        route.mode == TravelMode.motorcycle) {
-      _routeDurations[TravelMode.car] = route.durationSeconds;
-      _routeDurations[TravelMode.motorcycle] = route.durationSeconds;
-    }
-  }
-
-  Future<void> _loadAlternativeRouteEstimates(
-    PlannedRoute route,
-    int generation,
-  ) async {
-    const estimateModes = [TravelMode.walking, TravelMode.car];
-    for (final mode in estimateModes) {
-      if (mode == route.mode ||
-          (mode == TravelMode.car && route.mode == TravelMode.motorcycle)) {
-        continue;
-      }
-      try {
-        final estimate = await RoutePlannerApi.planRoute(
-          query: route.destinationName,
-          origin: route.origin,
-          savedLocations: route.savedLocation == null
-              ? const <AccessibleLocation>[]
-              : [route.savedLocation!],
-          mode: mode,
-          selectedPlace: PlaceSearchResult(
-            name: route.destinationName,
-            displayName: route.destinationName,
-            point: route.destination,
-          ),
-        );
-        if (!mounted || generation != _routeEstimateGeneration) return;
-        setState(() => _storeRouteDuration(estimate));
-      } catch (_) {
-        // Keep showing estimates for modes that have already loaded.
-      }
-    }
-  }
-
-  Future<void> _selectMapRouteMode(TravelMode mode) async {
-    final route = _walkingRoute;
-    if (route == null || route.mode == mode || _routing) return;
-    try {
-      await _changeRouteMode(route, mode);
-    } on Exception catch (error) {
-      if (mounted) _showMessage(error.toString());
-    }
   }
 
   void _openReportDetails(AccessReport report) {
@@ -530,22 +724,24 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openSavedPlaces() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => Scaffold(
-          backgroundColor: const Color(0xFFF7FAF8),
-          appBar: AppBar(
-            title: const Text('Saved Places'),
-            backgroundColor: Colors.white,
-            foregroundColor: kNavAbleNavy,
-            elevation: 0,
-          ),
-          body: _SavedPage(
-            savedPlaces: _savedPlaces,
-            onUsePlace: (place) {
-              Navigator.of(context).pop();
-              _useSavedPlace(place);
-            },
-            onDeletePlace: _deleteSavedPlace,
-            onOpenPlace: _openSavedPlaceDetails,
+        builder: (context) => NavAbleLightTheme(
+          child: Scaffold(
+            backgroundColor: const Color(0xFFF7FAF8),
+            appBar: AppBar(
+              title: const Text('Saved Places'),
+              backgroundColor: Colors.white,
+              foregroundColor: kNavAbleNavy,
+              elevation: 0,
+            ),
+            body: _SavedPage(
+              savedPlaces: _savedPlaces,
+              onUsePlace: (place) {
+                Navigator.of(context).pop();
+                _useSavedPlace(place);
+              },
+              onDeletePlace: _deleteSavedPlace,
+              onOpenPlace: _openSavedPlaceDetails,
+            ),
           ),
         ),
       ),
@@ -553,7 +749,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _editProfile() {
-    final user = AuthService.currentUser;
+    final user = _authService.currentUser;
     final nameController = TextEditingController(text: user?.fullName ?? '');
     final emailController = TextEditingController(text: user?.email ?? '');
     var selectedPhoto = user?.profileImageBytes;
@@ -585,224 +781,226 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (sheetContext, setSheetState) {
-            Future<void> changePhoto() async {
-              final action = await showModalBottomSheet<_ProfilePhotoAction>(
-                context: sheetContext,
-                useSafeArea: true,
-                showDragHandle: true,
-                backgroundColor: NavAblePalette.surface,
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(NavAbleRadius.card),
+        return NavAbleLightTheme(
+          child: StatefulBuilder(
+            builder: (sheetContext, setSheetState) {
+              Future<void> changePhoto() async {
+                final action = await showModalBottomSheet<_ProfilePhotoAction>(
+                  context: sheetContext,
+                  useSafeArea: true,
+                  showDragHandle: true,
+                  backgroundColor: NavAblePalette.surface,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(NavAbleRadius.card),
+                    ),
                   ),
-                ),
-                builder: (context) => Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    NavAbleSpacing.md,
-                    NavAbleSpacing.xs,
-                    NavAbleSpacing.md,
-                    NavAbleSpacing.lg,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Profile Photo',
-                        style: TextStyle(
-                          color: kNavAbleNavy,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: NavAbleSpacing.sm),
-                      ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Color(0xFFDDF9E3),
-                          child: Icon(
-                            Icons.photo_camera_outlined,
-                            color: NavAblePalette.greenDark,
-                          ),
-                        ),
-                        title: const Text('Take a Photo'),
-                        subtitle: const Text('Use your device camera'),
-                        onTap: () => Navigator.of(
-                          context,
-                        ).pop(_ProfilePhotoAction.camera),
-                      ),
-                      ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Color(0xFFDDEEFF),
-                          child: Icon(
-                            Icons.photo_library_outlined,
+                  builder: (context) => Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      NavAbleSpacing.md,
+                      NavAbleSpacing.xs,
+                      NavAbleSpacing.md,
+                      NavAbleSpacing.lg,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Profile Photo',
+                          style: TextStyle(
                             color: kNavAbleNavy,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                        title: const Text('Choose from Gallery'),
-                        subtitle: const Text('Select an existing image'),
-                        onTap: () => Navigator.of(
-                          context,
-                        ).pop(_ProfilePhotoAction.gallery),
-                      ),
-                      if (selectedPhoto != null)
+                        const SizedBox(height: NavAbleSpacing.sm),
                         ListTile(
                           leading: const CircleAvatar(
-                            backgroundColor: Color(0xFFFEE4E2),
+                            backgroundColor: Color(0xFFDDF9E3),
                             child: Icon(
-                              Icons.delete_outline_rounded,
-                              color: Color(0xFFB42318),
+                              Icons.photo_camera_outlined,
+                              color: NavAblePalette.greenDark,
                             ),
                           ),
-                          title: const Text('Remove Current Photo'),
+                          title: const Text('Take a Photo'),
+                          subtitle: const Text('Use your device camera'),
                           onTap: () => Navigator.of(
                             context,
-                          ).pop(_ProfilePhotoAction.remove),
+                          ).pop(_ProfilePhotoAction.camera),
                         ),
-                    ],
-                  ),
-                ),
-              );
-
-              if (action == null || !sheetContext.mounted) return;
-              if (action == _ProfilePhotoAction.remove) {
-                setSheetState(() => selectedPhoto = null);
-                return;
-              }
-
-              try {
-                final image = await ImagePicker().pickImage(
-                  source: action == _ProfilePhotoAction.camera
-                      ? ImageSource.camera
-                      : ImageSource.gallery,
-                  maxWidth: 1200,
-                  maxHeight: 1200,
-                  imageQuality: 88,
-                  requestFullMetadata: false,
-                );
-                if (image == null) return;
-                final imageBytes = await image.readAsBytes();
-                if (!sheetContext.mounted) return;
-                setSheetState(() => selectedPhoto = imageBytes);
-              } catch (_) {
-                if (!sheetContext.mounted) return;
-                ScaffoldMessenger.of(sheetContext).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'The photo could not be opened. Check camera or photo permissions and try again.',
-                    ),
-                  ),
-                );
-              }
-            }
-
-            return SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(
-                NavAbleSpacing.lg,
-                NavAbleSpacing.xs,
-                NavAbleSpacing.lg,
-                MediaQuery.viewInsetsOf(sheetContext).bottom +
-                    NavAbleSpacing.lg,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Edit Profile',
-                    style: TextStyle(
-                      color: kNavAbleNavy,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: NavAbleSpacing.md),
-                  Center(
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 104,
-                          height: 104,
-                          padding: const EdgeInsets.all(3),
-                          decoration: const BoxDecoration(
-                            color: kNavAbleGreen,
-                            shape: BoxShape.circle,
+                        ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFDDEEFF),
+                            child: Icon(
+                              Icons.photo_library_outlined,
+                              color: kNavAbleNavy,
+                            ),
                           ),
-                          child: CircleAvatar(
-                            backgroundColor: const Color(0xFFE8F3EC),
-                            foregroundImage: selectedPhoto == null
-                                ? null
-                                : MemoryImage(selectedPhoto!),
-                            child: selectedPhoto == null
-                                ? Text(
-                                    initialsFor(nameController.text),
-                                    style: const TextStyle(
-                                      color: kNavAbleNavy,
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  )
-                                : null,
-                          ),
+                          title: const Text('Choose from Gallery'),
+                          subtitle: const Text('Select an existing image'),
+                          onTap: () => Navigator.of(
+                            context,
+                          ).pop(_ProfilePhotoAction.gallery),
                         ),
-                        const SizedBox(height: NavAbleSpacing.xs),
-                        TextButton.icon(
-                          onPressed: changePhoto,
-                          icon: const Icon(Icons.add_a_photo_outlined),
-                          label: Text(
-                            selectedPhoto == null
-                                ? 'Add Profile Photo'
-                                : 'Change Profile Photo',
+                        if (selectedPhoto != null)
+                          ListTile(
+                            leading: const CircleAvatar(
+                              backgroundColor: Color(0xFFFEE4E2),
+                              child: Icon(
+                                Icons.delete_outline_rounded,
+                                color: Color(0xFFB42318),
+                              ),
+                            ),
+                            title: const Text('Remove Current Photo'),
+                            onTap: () => Navigator.of(
+                              context,
+                            ).pop(_ProfilePhotoAction.remove),
                           ),
-                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: NavAbleSpacing.sm),
-                  _InputField(
-                    controller: nameController,
-                    hintText: 'Full name',
-                    icon: Icons.person_outline,
-                  ),
-                  const SizedBox(height: NavAbleSpacing.sm),
-                  _InputField(
-                    controller: emailController,
-                    hintText: 'Email address',
-                    icon: Icons.email_outlined,
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: NavAbleSpacing.lg),
-                  SizedBox(
-                    width: double.infinity,
-                    height: NavAbleSize.primaryButton,
-                    child: FilledButton.icon(
-                      onPressed: () async {
-                        final result = await AuthService.updateProfile(
-                          fullName: nameController.text,
-                          email: emailController.text,
-                          profileImageBytes: selectedPhoto,
-                        );
-                        if (!mounted || !sheetContext.mounted) return;
-                        if (!result.isSuccess) {
-                          _showMessage(
-                            result.message ?? 'Profile update failed.',
-                          );
-                          return;
-                        }
+                );
 
-                        setState(() {});
-                        Navigator.of(sheetContext).pop();
-                        _showMessage('Profile updated.');
-                      },
-                      icon: const Icon(Icons.save_outlined),
-                      label: const Text('Save Profile'),
+                if (action == null || !sheetContext.mounted) return;
+                if (action == _ProfilePhotoAction.remove) {
+                  setSheetState(() => selectedPhoto = null);
+                  return;
+                }
+
+                try {
+                  final image = await ImagePicker().pickImage(
+                    source: action == _ProfilePhotoAction.camera
+                        ? ImageSource.camera
+                        : ImageSource.gallery,
+                    maxWidth: 1200,
+                    maxHeight: 1200,
+                    imageQuality: 88,
+                    requestFullMetadata: false,
+                  );
+                  if (image == null) return;
+                  final imageBytes = await image.readAsBytes();
+                  if (!sheetContext.mounted) return;
+                  setSheetState(() => selectedPhoto = imageBytes);
+                } catch (_) {
+                  if (!sheetContext.mounted) return;
+                  ScaffoldMessenger.of(sheetContext).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'The photo could not be opened. Check camera or photo permissions and try again.',
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            );
-          },
+                  );
+                }
+              }
+
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  NavAbleSpacing.lg,
+                  NavAbleSpacing.xs,
+                  NavAbleSpacing.lg,
+                  MediaQuery.viewInsetsOf(sheetContext).bottom +
+                      NavAbleSpacing.lg,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Edit Profile',
+                      style: TextStyle(
+                        color: kNavAbleNavy,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: NavAbleSpacing.md),
+                    Center(
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 104,
+                            height: 104,
+                            padding: const EdgeInsets.all(3),
+                            decoration: const BoxDecoration(
+                              color: kNavAbleGreen,
+                              shape: BoxShape.circle,
+                            ),
+                            child: CircleAvatar(
+                              backgroundColor: const Color(0xFFE8F3EC),
+                              foregroundImage: selectedPhoto == null
+                                  ? null
+                                  : MemoryImage(selectedPhoto!),
+                              child: selectedPhoto == null
+                                  ? Text(
+                                      initialsFor(nameController.text),
+                                      style: const TextStyle(
+                                        color: kNavAbleNavy,
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(height: NavAbleSpacing.xs),
+                          TextButton.icon(
+                            onPressed: changePhoto,
+                            icon: const Icon(Icons.add_a_photo_outlined),
+                            label: Text(
+                              selectedPhoto == null
+                                  ? 'Add Profile Photo'
+                                  : 'Change Profile Photo',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: NavAbleSpacing.sm),
+                    _InputField(
+                      controller: nameController,
+                      hintText: 'Full name',
+                      icon: Icons.person_outline,
+                    ),
+                    const SizedBox(height: NavAbleSpacing.sm),
+                    _InputField(
+                      controller: emailController,
+                      hintText: 'Email address',
+                      icon: Icons.email_outlined,
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: NavAbleSpacing.lg),
+                    SizedBox(
+                      width: double.infinity,
+                      height: NavAbleSize.primaryButton,
+                      child: FilledButton.icon(
+                        onPressed: () async {
+                          final result = await _authService.updateProfile(
+                            fullName: nameController.text,
+                            email: emailController.text,
+                            profileImageBytes: selectedPhoto,
+                          );
+                          if (!mounted || !sheetContext.mounted) return;
+                          if (!result.isSuccess) {
+                            _showMessage(
+                              result.message ?? 'Profile update failed.',
+                            );
+                            return;
+                          }
+
+                          setState(() {});
+                          Navigator.of(sheetContext).pop();
+                          _showMessage('Profile updated.');
+                        },
+                        icon: const Icon(Icons.save_outlined),
+                        label: const Text('Save Profile'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         );
       },
     ).whenComplete(() {
@@ -823,8 +1021,9 @@ class _HomeScreenState extends State<HomeScreen> {
         title: report.title,
         detail: report.detail,
         category: report.category,
-        location: report.location,
         locationId: report.locationId,
+        coordinates: report.location,
+        googlePlaceId: report.googlePlaceId,
         photos: report.photoBytes,
         analysis: analysis,
       );
@@ -851,6 +1050,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadProfileStats();
       _showMessage(switch (result.aiAnalysisStatus) {
         'completed' => 'Report submitted. AI suggestions are ready for review.',
+        'skipped' => 'Report submitted for administrator review.',
         'partial' =>
           'Report submitted. Some photos need administrator review without AI results.',
         _ =>
@@ -885,6 +1085,8 @@ class _HomeScreenState extends State<HomeScreen> {
     var toilet = _accessibleToilet;
     var tactile = _tactilePaving;
     var audio = _audioAssistance;
+    var parking = _accessibleParking;
+    var seating = _wheelchairSeating;
 
     showModalBottomSheet<void>(
       context: context,
@@ -896,164 +1098,184 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return FractionallySizedBox(
-              heightFactor: 0.82,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Accessibility Filters',
-                            style: TextStyle(
-                              color: kNavAbleNavy,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Close filters',
-                          onPressed: () => Navigator.of(sheetContext).pop(),
-                          icon: const Icon(Icons.close_rounded),
-                          color: kNavAbleNavy,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+        return NavAbleLightTheme(
+          child: StatefulBuilder(
+            builder: (context, setSheetState) {
+              return FractionallySizedBox(
+                heightFactor: 0.82,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
+                      child: Row(
                         children: [
-                          const Text(
-                            'Select the features you need to ensure a comfortable and safe journey.',
-                            style: TextStyle(
-                              color: kNavAbleText,
-                              fontSize: 13,
-                              height: 1.45,
+                          const Expanded(
+                            child: Text(
+                              'Accessibility Filters',
+                              style: TextStyle(
+                                color: kNavAbleNavy,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 16),
-                          _FilterOptionTile(
-                            icon: Icons.accessible_forward_rounded,
-                            label: 'Wheelchair Ramp',
-                            value: ramp,
-                            onChanged: (value) =>
-                                setSheetState(() => ramp = value),
-                          ),
-                          _FilterOptionTile(
-                            icon: Icons.elevator_outlined,
-                            label: 'Elevator',
-                            value: elevator,
-                            onChanged: (value) =>
-                                setSheetState(() => elevator = value),
-                          ),
-                          _FilterOptionTile(
-                            icon: Icons.meeting_room_outlined,
-                            label: 'Accessible Entrance',
-                            value: entrance,
-                            onChanged: (value) =>
-                                setSheetState(() => entrance = value),
-                          ),
-                          _FilterOptionTile(
-                            icon: Icons.wc_rounded,
-                            label: 'Accessible Toilet',
-                            value: toilet,
-                            onChanged: (value) =>
-                                setSheetState(() => toilet = value),
-                          ),
-                          _FilterOptionTile(
-                            icon: Icons.blind_rounded,
-                            label: 'Tactile Paving',
-                            value: tactile,
-                            onChanged: (value) =>
-                                setSheetState(() => tactile = value),
-                          ),
-                          _FilterOptionTile(
-                            icon: Icons.hearing_rounded,
-                            label: 'Audio Assistance',
-                            value: audio,
-                            onChanged: (value) =>
-                                setSheetState(() => audio = value),
+                          IconButton(
+                            tooltip: 'Close filters',
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                            color: kNavAbleNavy,
                           ),
                         ],
                       ),
                     ),
-                  ),
-                  const Divider(height: 1),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
-                    child: Column(
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                          height: NavAbleSize.control,
-                          child: FilledButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _avoidStairs = ramp;
-                                _prioritizeElevators = elevator;
-                                _accessibleEntrance = entrance;
-                                _accessibleToilet = toilet;
-                                _tactilePaving = tactile;
-                                _audioAssistance = audio;
-                              });
-                              Navigator.of(sheetContext).pop();
-                              _showMessage('Accessibility filters applied.');
-                            },
-                            style: FilledButton.styleFrom(
-                              backgroundColor: kNavAbleNavy,
-                              foregroundColor: Colors.white,
-                              shape: const StadiumBorder(),
-                            ),
-                            iconAlignment: IconAlignment.end,
-                            icon: const Icon(
-                              Icons.check_circle_outline_rounded,
-                              size: 19,
-                            ),
-                            label: const Text('Apply Filters'),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          height: NavAbleSize.compactControl,
-                          child: OutlinedButton(
-                            onPressed: () {
-                              setSheetState(() {
-                                ramp = false;
-                                elevator = false;
-                                entrance = false;
-                                toilet = false;
-                                tactile = false;
-                                audio = false;
-                              });
-                            },
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: kNavAbleNavy,
-                              side: const BorderSide(
-                                color: kNavAbleNavy,
-                                width: 1.5,
+                    const Divider(height: 1),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Select the features you need to ensure a comfortable and safe journey.',
+                              style: TextStyle(
+                                color: kNavAbleText,
+                                fontSize: 13,
+                                height: 1.45,
                               ),
-                              shape: const StadiumBorder(),
                             ),
-                            child: const Text('Clear All'),
-                          ),
+                            const SizedBox(height: 16),
+                            _FilterOptionTile(
+                              icon: Icons.accessible_forward_rounded,
+                              label: 'Wheelchair Ramp',
+                              value: ramp,
+                              onChanged: (value) =>
+                                  setSheetState(() => ramp = value),
+                            ),
+                            _FilterOptionTile(
+                              icon: Icons.elevator_outlined,
+                              label: 'Elevator',
+                              value: elevator,
+                              onChanged: (value) =>
+                                  setSheetState(() => elevator = value),
+                            ),
+                            _FilterOptionTile(
+                              icon: Icons.meeting_room_outlined,
+                              label: 'Accessible Entrance',
+                              value: entrance,
+                              onChanged: (value) =>
+                                  setSheetState(() => entrance = value),
+                            ),
+                            _FilterOptionTile(
+                              icon: Icons.wc_rounded,
+                              label: 'Accessible Toilet',
+                              value: toilet,
+                              onChanged: (value) =>
+                                  setSheetState(() => toilet = value),
+                            ),
+                            _FilterOptionTile(
+                              icon: Icons.blind_rounded,
+                              label: 'Tactile Paving',
+                              value: tactile,
+                              onChanged: (value) =>
+                                  setSheetState(() => tactile = value),
+                            ),
+                            _FilterOptionTile(
+                              icon: Icons.hearing_rounded,
+                              label: 'Audio Assistance',
+                              value: audio,
+                              onChanged: (value) =>
+                                  setSheetState(() => audio = value),
+                            ),
+                            _FilterOptionTile(
+                              icon: Icons.local_parking_rounded,
+                              label: 'Accessible Parking',
+                              value: parking,
+                              onChanged: (value) =>
+                                  setSheetState(() => parking = value),
+                            ),
+                            _FilterOptionTile(
+                              icon: Icons.event_seat_outlined,
+                              label: 'Wheelchair Seating',
+                              value: seating,
+                              onChanged: (value) =>
+                                  setSheetState(() => seating = value),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            );
-          },
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: NavAbleSize.control,
+                            child: FilledButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _avoidStairs = ramp;
+                                  _prioritizeElevators = elevator;
+                                  _accessibleEntrance = entrance;
+                                  _accessibleToilet = toilet;
+                                  _tactilePaving = tactile;
+                                  _audioAssistance = audio;
+                                  _accessibleParking = parking;
+                                  _wheelchairSeating = seating;
+                                });
+                                Navigator.of(sheetContext).pop();
+                                _showMessage('Accessibility filters applied.');
+                              },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: kNavAbleNavy,
+                                foregroundColor: Colors.white,
+                                shape: const StadiumBorder(),
+                              ),
+                              iconAlignment: IconAlignment.end,
+                              icon: const Icon(
+                                Icons.check_circle_outline_rounded,
+                                size: 19,
+                              ),
+                              label: const Text('Apply Filters'),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            height: NavAbleSize.compactControl,
+                            child: OutlinedButton(
+                              onPressed: () {
+                                setSheetState(() {
+                                  ramp = false;
+                                  elevator = false;
+                                  entrance = false;
+                                  toilet = false;
+                                  tactile = false;
+                                  audio = false;
+                                  parking = false;
+                                  seating = false;
+                                });
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: kNavAbleNavy,
+                                side: const BorderSide(
+                                  color: kNavAbleNavy,
+                                  width: 1.5,
+                                ),
+                                shape: const StadiumBorder(),
+                              ),
+                              child: const Text('Clear All'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         );
       },
     );
@@ -1067,7 +1289,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = AuthService.currentUser;
+    final user = _authService.currentUser;
     final pages = <Widget>[
       _PlanPage(
         isGuest: widget.isGuest,
@@ -1075,22 +1297,24 @@ class _HomeScreenState extends State<HomeScreen> {
         locationsLoading: _locationsLoading,
         locationsError: _locationsError,
         selectedLocation: _selectedMapLocation,
+        selectedPlace: _selectedPlace,
+        onOpenInGoogleMaps: _openSelectedPlaceInGoogleMaps,
         destinationController: _destinationController,
         placeSearchResults: _placeSearchResults,
+        resultPins: _resultPins,
         placeSearching: _placeSearching,
         searchedPlace: _searchedPlace,
         routeStatus: _routeStatus,
         walkingRoute: _walkingRoute,
         routing: _routing,
-        travelMode: _travelMode,
-        routeDurations: _routeDurations,
-        destinationSelected: _destinationSelected,
         avoidStairs: _avoidStairs,
         prioritizeElevators: _prioritizeElevators,
         accessibleEntrance: _accessibleEntrance,
         accessibleToilet: _accessibleToilet,
         tactilePaving: _tactilePaving,
         audioAssistance: _audioAssistance,
+        accessibleParking: _accessibleParking,
+        wheelchairSeating: _wheelchairSeating,
         onLocationSelected: _selectMapLocation,
         onAvoidStairsChanged: (value) => setState(() => _avoidStairs = value),
         onPrioritizeElevatorsChanged: (value) =>
@@ -1103,10 +1327,14 @@ class _HomeScreenState extends State<HomeScreen> {
             setState(() => _tactilePaving = value),
         onAudioAssistanceChanged: (value) =>
             setState(() => _audioAssistance = value),
-        onPlanRoute: _planRoute,
-        onRouteModeSelected: _selectMapRouteMode,
+        onAccessibleParkingChanged: (value) =>
+            setState(() => _accessibleParking = value),
+        onWheelchairSeatingChanged: (value) =>
+            setState(() => _wheelchairSeating = value),
         onDestinationChanged: _onDestinationChanged,
         onSearchPlaces: _searchPlaces,
+        onSearchTapped: _showSuggestionsAgain,
+        onDismissSuggestions: _dismissSuggestions,
         onPlaceSelected: _selectSearchedPlace,
         onOpenRouteDetails: _openRouteDetails,
         onSaveDestination: _saveAccessibleLocation,
@@ -1127,6 +1355,8 @@ class _HomeScreenState extends State<HomeScreen> {
         locationsError: _locationsError,
         onNavigate: (location) => _navigateToPlace(location.name),
         onSubmitPhoto: (location) => _startPhotoSubmission(location: location),
+        onContributeGooglePlace: _contributeToGooglePlace,
+        onRefresh: () => _loadAccessibleLocations(refresh: true),
       ),
       if (!widget.isGuest) ...[
         _ReportsPage(
@@ -1138,6 +1368,17 @@ class _HomeScreenState extends State<HomeScreen> {
           onAnalyzePhotos: _analyzeReportPhotos,
           onSubmitReport: _submitReport,
           onOpenReport: _openReportDetails,
+          initialKind: _reportKind,
+          initialGooglePlace: _pendingGooglePlace,
+          onBackToHome: () => setState(() => _selectedIndex = 0),
+          onOpenContributions: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (context) => _MySubmissionsScreen(
+                submissions: _submissions,
+                reportCount: _profileStats?.reportCount,
+              ),
+            ),
+          ),
         ),
         _AlertsPage(reports: _reports, onOpenReport: _openReportDetails),
         _ProfilePage(
@@ -1153,7 +1394,8 @@ class _HomeScreenState extends State<HomeScreen> {
           onEditProfile: _editProfile,
           onOpenInfo: _openInfoPage,
           onSignOut: () async {
-            await AuthService.signOut();
+            _signingOut = true;
+            await _authService.logout();
             if (!context.mounted) return;
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute<void>(
@@ -1204,8 +1446,11 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(child: pages[_selectedIndex]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _selectedIndex = index),
+        onDestinationSelected: (index) => setState(() {
+          _selectedIndex = index;
+          _reportKind = null;
+          _pendingGooglePlace = null;
+        }),
         indicatorColor: theme.brightness == Brightness.dark
             ? NavAblePalette.green.withValues(alpha: 0.2)
             : kNavAbleAccent,
@@ -1261,6 +1506,7 @@ class AccessReport {
     required this.title,
     this.location = '',
     this.locationId,
+    this.googlePlaceId,
     required this.detail,
     required this.category,
     required this.icon,
@@ -1275,6 +1521,9 @@ class AccessReport {
   final String title;
   final String location;
   final String? locationId;
+
+  /// Google place being contributed to when it isn't a NavAble place yet.
+  final String? googlePlaceId;
   final String detail;
   final String category;
   final IconData icon;
@@ -1303,6 +1552,7 @@ class AccessReport {
       title: title ?? this.title,
       location: location ?? this.location,
       locationId: locationId ?? this.locationId,
+      googlePlaceId: googlePlaceId,
       detail: detail ?? this.detail,
       category: category ?? this.category,
       icon: icon ?? this.icon,
@@ -1422,222 +1672,132 @@ class InfoScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7FAF8),
-      appBar: AppBar(
-        title: Text(title),
-        backgroundColor: Colors.white,
-        foregroundColor: kNavAbleNavy,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            _Panel(
-              child: Text(
-                body,
-                style: const TextStyle(
-                  color: kNavAbleText,
-                  fontSize: 15,
-                  height: 1.55,
-                  letterSpacing: 0,
+    return NavAbleLightTheme(
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7FAF8),
+        appBar: AppBar(
+          title: Text(title),
+          backgroundColor: Colors.white,
+          foregroundColor: kNavAbleNavy,
+          elevation: 0,
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              _Panel(
+                child: Text(
+                  body,
+                  style: const TextStyle(
+                    color: kNavAbleText,
+                    fontSize: 15,
+                    height: 1.55,
+                    letterSpacing: 0,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class RouteDetailsScreen extends StatefulWidget {
-  const RouteDetailsScreen({
-    super.key,
-    required this.route,
-    required this.onModeChanged,
-  });
+class RouteDetailsScreen extends StatelessWidget {
+  const RouteDetailsScreen({super.key, required this.route});
 
   final PlannedRoute route;
-  final Future<PlannedRoute> Function(PlannedRoute, TravelMode) onModeChanged;
-
-  @override
-  State<RouteDetailsScreen> createState() => _RouteDetailsScreenState();
-}
-
-class _RouteDetailsScreenState extends State<RouteDetailsScreen> {
-  late PlannedRoute _route;
-  bool _changingMode = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _route = widget.route;
-  }
-
-  Future<void> _selectMode(TravelMode mode) async {
-    if (_changingMode || mode == _route.mode) return;
-    setState(() => _changingMode = true);
-    try {
-      final updatedRoute = await widget.onModeChanged(_route, mode);
-      if (mounted) setState(() => _route = updatedRoute);
-    } catch (error) {
-      if (!mounted) return;
-      final message = error is RoutePlannerException
-          ? error.message
-          : 'Could not calculate this route. Please try again.';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-    } finally {
-      if (mounted) setState(() => _changingMode = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final route = _route;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7FAF8),
-      appBar: AppBar(
-        title: const Text('Route Details'),
-        backgroundColor: Colors.white,
-        foregroundColor: kNavAbleNavy,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Travel mode',
-                          style: TextStyle(
-                            color: kNavAbleNavy,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+    return NavAbleLightTheme(
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7FAF8),
+        appBar: AppBar(
+          title: const Text('Route Details'),
+          backgroundColor: Colors.white,
+          foregroundColor: kNavAbleNavy,
+          elevation: 0,
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              _Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      route.destinationName,
+                      style: const TextStyle(
+                        color: kNavAbleNavy,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
                       ),
-                      if (_changingMode)
-                        const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: SegmentedButton<TravelMode>(
-                      segments: const [
-                        ButtonSegment(
-                          value: TravelMode.walking,
-                          icon: Icon(Icons.directions_walk_rounded),
-                          label: Text('Walk'),
-                        ),
-                        ButtonSegment(
-                          value: TravelMode.car,
-                          icon: Icon(Icons.directions_car_rounded),
-                          label: Text('Car'),
-                        ),
-                        ButtonSegment(
-                          value: TravelMode.motorcycle,
-                          icon: Icon(Icons.motorcycle_rounded),
-                          label: Text('Motorcycle'),
-                        ),
-                      ],
-                      selected: {route.mode},
-                      onSelectionChanged: _changingMode
-                          ? null
-                          : (selection) => _selectMode(selection.first),
-                      showSelectedIcon: false,
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    route.destinationName,
-                    style: const TextStyle(
-                      color: kNavAbleNavy,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${route.summary}\n${route.mode.label} route estimate from OpenStreetMap.',
-                    style: const TextStyle(
-                      color: kNavAbleText,
-                      fontSize: 14,
-                      height: 1.45,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${route.mode.label} directions',
-                    style: TextStyle(
-                      color: kNavAbleNavy,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  if (route.instructions.isEmpty)
-                    const Text('No turn-by-turn instructions were returned.')
-                  else
-                    for (
-                      var index = 0;
-                      index < route.instructions.length;
-                      index++
-                    )
-                      _InstructionStep(
-                        number: index + 1,
-                        text: route.instructions[index],
+                    const SizedBox(height: 8),
+                    Text(
+                      '${route.summary}\n${route.mode.label} route estimate from OpenStreetMap.',
+                      style: const TextStyle(
+                        color: kNavAbleText,
+                        fontSize: 14,
+                        height: 1.45,
+                        letterSpacing: 0,
                       ),
-                  const SizedBox(height: 12),
-                  Text(
-                    switch (route.mode) {
-                      TravelMode.walking =>
-                        'This route is not verified for wheelchair access or step-free travel. Check the route and location details before following it.',
-                      TravelMode.car =>
-                        'Follow posted signs and local traffic rules. Route estimates may not reflect current closures or restrictions.',
-                      TravelMode.motorcycle =>
-                        'Motorcycle routes use the standard car road profile and may not reflect motorcycle-specific restrictions. Follow posted signs and local traffic rules.',
-                    },
-                    style: TextStyle(
-                      color: kNavAbleText,
-                      fontSize: 13,
-                      height: 1.4,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              _Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${route.mode.label} directions',
+                      style: TextStyle(
+                        color: kNavAbleNavy,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    if (route.instructions.isEmpty)
+                      const Text('No turn-by-turn instructions were returned.')
+                    else
+                      for (
+                        var index = 0;
+                        index < route.instructions.length;
+                        index++
+                      )
+                        _InstructionStep(
+                          number: index + 1,
+                          text: route.instructions[index],
+                        ),
+                    const SizedBox(height: 12),
+                    Text(
+                      switch (route.mode) {
+                        TravelMode.walking =>
+                          'This route is not verified for wheelchair access or step-free travel. Check the route and location details before following it.',
+                        TravelMode.car =>
+                          'Follow posted signs and local traffic rules. Route estimates may not reflect current closures or restrictions.',
+                        TravelMode.motorcycle =>
+                          'Motorcycle routes use the standard car road profile and may not reflect motorcycle-specific restrictions. Follow posted signs and local traffic rules.',
+                      },
+                      style: TextStyle(
+                        color: kNavAbleText,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1665,183 +1825,188 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
   Widget build(BuildContext context) {
     final confirmations = widget.report.confirmations + (_confirmed ? 1 : 0);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7FAF8),
-      appBar: AppBar(
-        title: const Text('Report Details'),
-        backgroundColor: Colors.white,
-        foregroundColor: kNavAbleNavy,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(widget.report.icon, color: kNavAbleGreen),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          widget.report.title,
-                          style: const TextStyle(
-                            color: kNavAbleNavy,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0,
-                          ),
-                        ),
-                      ),
-                      _Tag(label: widget.report.category),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    widget.report.detail,
-                    style: const TextStyle(
-                      color: kNavAbleText,
-                      fontSize: 15,
-                      height: 1.5,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  if (widget.report.photoBytes.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      height: 190,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: widget.report.photoBytes.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 10),
-                        itemBuilder: (context, index) => ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.memory(
-                            widget.report.photoBytes[index],
-                            width: 240,
-                            height: 190,
-                            fit: BoxFit.cover,
-                            semanticLabel:
-                                'Accessibility report photo ${index + 1}',
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (widget.report.aiAnalysisStatus != 'not_started') ...[
-                    const SizedBox(height: 16),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F7F3),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFD5E9DB)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Row(
-                              children: [
-                                Icon(
-                                  Icons.auto_awesome_outlined,
-                                  color: kNavAbleGreen,
-                                  size: 19,
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  'AI photo suggestions',
-                                  style: TextStyle(
-                                    color: kNavAbleNavy,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
+    return NavAbleLightTheme(
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7FAF8),
+        appBar: AppBar(
+          title: const Text('Report Details'),
+          backgroundColor: Colors.white,
+          foregroundColor: kNavAbleNavy,
+          elevation: 0,
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              _Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(widget.report.icon, color: kNavAbleGreen),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            widget.report.title,
+                            style: const TextStyle(
+                              color: kNavAbleNavy,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0,
                             ),
-                            const SizedBox(height: 8),
-                            if (!widget.report.aiAnalysisCompleted)
-                              Text(
-                                widget.report.aiAnalysisStatus == 'failed'
-                                    ? 'AI analysis could not finish. An administrator can still review the report.'
-                                    : 'AI analysis: ${widget.report.aiAnalysisStatus}. Suggestions are informational and awaiting human review.',
-                                style: const TextStyle(color: kNavAbleText),
-                              )
-                            else if (widget.report.detections.isEmpty)
-                              const Text(
-                                'No recognized accessibility features found.',
-                                style: TextStyle(color: kNavAbleText),
-                              )
-                            else
-                              for (final detection in widget.report.detections)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 4),
-                                  child: Text(
-                                    detection.entries
-                                        .where(
-                                          (entry) =>
-                                              entry.value is String ||
-                                              entry.value is num ||
-                                              entry.value is bool,
-                                        )
-                                        .map(
-                                          (entry) =>
-                                              '${entry.key}: ${entry.value}',
-                                        )
-                                        .join(' · '),
-                                    style: const TextStyle(
+                          ),
+                        ),
+                        _Tag(label: widget.report.category),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.report.detail,
+                      style: const TextStyle(
+                        color: kNavAbleText,
+                        fontSize: 15,
+                        height: 1.5,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    if (widget.report.photoBytes.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 190,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: widget.report.photoBytes.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 10),
+                          itemBuilder: (context, index) => ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.memory(
+                              widget.report.photoBytes[index],
+                              width: 240,
+                              height: 190,
+                              fit: BoxFit.cover,
+                              semanticLabel:
+                                  'Accessibility report photo ${index + 1}',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (widget.report.aiAnalysisStatus != 'not_started') ...[
+                      const SizedBox(height: 16),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F7F3),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFD5E9DB)),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(
+                                    Icons.auto_awesome_outlined,
+                                    color: kNavAbleGreen,
+                                    size: 19,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'AI photo suggestions',
+                                    style: TextStyle(
                                       color: kNavAbleNavy,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w800,
                                     ),
                                   ),
-                                ),
-                            const SizedBox(height: 6),
-                            const Text(
-                              'AI suggestions only. An admin must verify this report.',
-                              style: TextStyle(
-                                color: kNavAbleText,
-                                fontSize: 12,
+                                ],
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 8),
+                              if (!widget.report.aiAnalysisCompleted)
+                                Text(
+                                  widget.report.aiAnalysisStatus == 'failed'
+                                      ? 'AI analysis could not finish. An administrator can still review the report.'
+                                      : 'AI analysis: ${widget.report.aiAnalysisStatus}. Suggestions are informational and awaiting human review.',
+                                  style: const TextStyle(color: kNavAbleText),
+                                )
+                              else if (widget.report.detections.isEmpty)
+                                const Text(
+                                  'No recognized accessibility features found.',
+                                  style: TextStyle(color: kNavAbleText),
+                                )
+                              else
+                                for (final detection
+                                    in widget.report.detections)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Text(
+                                      detection.entries
+                                          .where(
+                                            (entry) =>
+                                                entry.value is String ||
+                                                entry.value is num ||
+                                                entry.value is bool,
+                                          )
+                                          .map(
+                                            (entry) =>
+                                                '${entry.key}: ${entry.value}',
+                                          )
+                                          .join(' · '),
+                                      style: const TextStyle(
+                                        color: kNavAbleNavy,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'AI suggestions only. An admin must verify this report.',
+                                style: TextStyle(
+                                  color: kNavAbleText,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Text(
+                      '$confirmations local confirmations',
+                      style: const TextStyle(
+                        color: kNavAbleNavy,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: NavAbleSize.control,
+                      child: FilledButton.icon(
+                        onPressed: _confirmed
+                            ? null
+                            : () {
+                                widget.onConfirm();
+                                setState(() => _confirmed = true);
+                              },
+                        style: FilledButton.styleFrom(
+                          backgroundColor: kNavAbleNavy,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.verified_outlined),
+                        label: Text(
+                          _confirmed ? 'Confirmed' : 'Confirm Report',
                         ),
                       ),
                     ),
                   ],
-                  const SizedBox(height: 16),
-                  Text(
-                    '$confirmations local confirmations',
-                    style: const TextStyle(
-                      color: kNavAbleNavy,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: NavAbleSize.control,
-                    child: FilledButton.icon(
-                      onPressed: _confirmed
-                          ? null
-                          : () {
-                              widget.onConfirm();
-                              setState(() => _confirmed = true);
-                            },
-                      style: FilledButton.styleFrom(
-                        backgroundColor: kNavAbleNavy,
-                        foregroundColor: Colors.white,
-                      ),
-                      icon: const Icon(Icons.verified_outlined),
-                      label: Text(_confirmed ? 'Confirmed' : 'Confirm Report'),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1900,85 +2065,90 @@ class _SavedPlaceDetailsScreenState extends State<SavedPlaceDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7FAF8),
-      appBar: AppBar(
-        title: const Text('Saved Place'),
-        backgroundColor: Colors.white,
-        foregroundColor: kNavAbleNavy,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _InputField(
-                    controller: _nameController,
-                    hintText: 'Place name',
-                    icon: Icons.place_outlined,
-                  ),
-                  const SizedBox(height: 12),
-                  _InputField(
-                    controller: _addressController,
-                    hintText: 'Accessible entrance or note',
-                    icon: Icons.notes_outlined,
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _tag,
-                    decoration: _fieldDecoration(
-                      hintText: 'Tag',
-                      icon: Icons.label_outline,
+    return NavAbleLightTheme(
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7FAF8),
+        appBar: AppBar(
+          title: const Text('Saved Place'),
+          backgroundColor: Colors.white,
+          foregroundColor: kNavAbleNavy,
+          elevation: 0,
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              _Panel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _InputField(
+                      controller: _nameController,
+                      hintText: 'Place name',
+                      icon: Icons.place_outlined,
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'Home', child: Text('Home')),
-                      DropdownMenuItem(value: 'Work', child: Text('Work')),
-                      DropdownMenuItem(
-                        value: 'Transit',
-                        child: Text('Transit'),
+                    const SizedBox(height: 12),
+                    _InputField(
+                      controller: _addressController,
+                      hintText: 'Accessible entrance or note',
+                      icon: Icons.notes_outlined,
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: _tag,
+                      decoration: _fieldDecoration(
+                        hintText: 'Tag',
+                        icon: Icons.label_outline,
                       ),
-                      DropdownMenuItem(value: 'Civic', child: Text('Civic')),
-                      DropdownMenuItem(value: 'Custom', child: Text('Custom')),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _tag = value);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: widget.onRoute,
-                          icon: const Icon(Icons.route_rounded),
-                          label: const Text('Route'),
+                      items: const [
+                        DropdownMenuItem(value: 'Home', child: Text('Home')),
+                        DropdownMenuItem(value: 'Work', child: Text('Work')),
+                        DropdownMenuItem(
+                          value: 'Transit',
+                          child: Text('Transit'),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _save,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: kNavAbleNavy,
-                            foregroundColor: Colors.white,
+                        DropdownMenuItem(value: 'Civic', child: Text('Civic')),
+                        DropdownMenuItem(
+                          value: 'Custom',
+                          child: Text('Custom'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _tag = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: widget.onRoute,
+                            icon: const Icon(Icons.route_rounded),
+                            label: const Text('Route'),
                           ),
-                          icon: const Icon(Icons.save_outlined),
-                          label: const Text('Save'),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _save,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: kNavAbleNavy,
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: const Icon(Icons.save_outlined),
+                            label: const Text('Save'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

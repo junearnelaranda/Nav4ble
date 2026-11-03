@@ -29,7 +29,7 @@ extension NavAbleThemeColors on BuildContext {
 }
 
 abstract final class NavAblePreferences {
-  static final themeMode = ValueNotifier<ThemeMode>(ThemeMode.light);
+  static final themeMode = ValueNotifier<ThemeMode>(ThemeMode.dark);
   static final textScale = ValueNotifier<double>(1);
   static final language = ValueNotifier<String>('English (United States)');
 }
@@ -240,23 +240,32 @@ abstract final class NavAbleTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: NavAblePalette.darkCanvas,
       canvasColor: NavAblePalette.darkCanvas,
-      textTheme: const TextTheme(
-        headlineSmall: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w800,
-          letterSpacing: -0.3,
-        ),
-        titleLarge: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w800,
-          letterSpacing: -0.2,
-        ),
-        titleMedium: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
-        ),
-        bodyMedium: TextStyle(color: NavAblePalette.darkText, height: 1.45),
-      ),
+      // copyWith does not fill in defaults, so start from the full dark text
+      // theme; otherwise text fields fall back to black text.
+      textTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark)
+          .textTheme
+          .merge(
+            const TextTheme(
+              headlineSmall: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+              ),
+              titleLarge: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
+              titleMedium: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+              bodyMedium: TextStyle(
+                color: NavAblePalette.darkText,
+                height: 1.45,
+              ),
+            ),
+          ),
       appBarTheme: const AppBarTheme(
         backgroundColor: NavAblePalette.darkSurface,
         foregroundColor: Colors.white,
@@ -298,8 +307,56 @@ abstract final class NavAbleTheme {
         thickness: 1,
         space: 1,
       ),
+      inputDecorationTheme: light.inputDecorationTheme.copyWith(
+        fillColor: NavAblePalette.darkCanvas,
+        hintStyle: const TextStyle(color: Color(0xFF8D99A6), fontSize: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(NavAbleRadius.control),
+          borderSide: const BorderSide(color: NavAblePalette.darkBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(NavAbleRadius.control),
+          borderSide: const BorderSide(color: NavAblePalette.darkBorder),
+        ),
+      ),
+      // Navy buttons disappear on the dark canvas, so dark mode uses the
+      // NavAble green with navy text (about 7:1 contrast).
+      filledButtonTheme: FilledButtonThemeData(
+        style: light.filledButtonTheme.style?.copyWith(
+          backgroundColor: const WidgetStatePropertyAll(NavAblePalette.green),
+          foregroundColor: const WidgetStatePropertyAll(NavAblePalette.navy),
+          overlayColor: WidgetStatePropertyAll(
+            NavAblePalette.navy.withValues(alpha: 0.1),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: light.outlinedButtonTheme.style?.copyWith(
+          foregroundColor: const WidgetStatePropertyAll(Colors.white),
+          side: const WidgetStatePropertyAll(
+            BorderSide(color: NavAblePalette.darkBorder, width: 1.3),
+          ),
+        ),
+      ),
+      snackBarTheme: light.snackBarTheme.copyWith(
+        backgroundColor: NavAblePalette.darkSurface,
+        actionTextColor: NavAblePalette.green,
+      ),
     );
   }
+}
+
+/// Keeps screens that were designed on light backgrounds (auth screens,
+/// detail pages, the place card) readable while the app runs in dark mode.
+class NavAbleLightTheme extends StatelessWidget {
+  const NavAbleLightTheme({super.key, required this.child});
+
+  static final ThemeData _theme = NavAbleTheme.light;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Theme(data: _theme, child: child);
 }
 
 class NavAbleSurface extends StatefulWidget {

@@ -1,0 +1,5 @@
+accessible_entrance
+accessible_restroom
+elevator
+ramp
+tactile

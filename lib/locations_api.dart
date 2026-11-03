@@ -1,7 +1,4 @@
-import 'dart:convert';
-
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LocationsApiException implements Exception {
   const LocationsApiException(this.message, {this.statusCode});
@@ -22,6 +19,8 @@ class AccessibleLocation {
     required this.longitude,
     required this.features,
     this.rating,
+    this.googlePlaceId,
+    this.photoUrl,
   });
 
   final String id;
@@ -31,26 +30,26 @@ class AccessibleLocation {
   final double longitude;
   final List<String> features;
   final double? rating;
+
+  /// Google place this NavAble place describes, if linked.
+  final String? googlePlaceId;
+
+  /// Cover photo an admin uploaded for this place, if any.
+  final String? photoUrl;
 }
 
 class LocationsApi {
   LocationsApi._();
 
-  static const _projectId = 'nav4ble-22f2d';
-  static const _documentsUrl =
-      'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents';
-
   static Future<List<AccessibleLocation>> getAccessibleLocations() async {
-    final user = FirebaseAuth.instance.currentUser;
-    final token = await user?.getIdToken();
-    final locations = await _listCollection('locations', token);
+    final locations = await _listCollection('locations');
     if (locations.isEmpty) return const [];
 
     var relatedFeatures = const <List<Map<String, dynamic>>>[];
     try {
       relatedFeatures = await Future.wait([
-        _listCollection('accessibility_features', token),
-        _listCollection('location_features', token),
+        _listCollection('accessibility_features'),
+        _listCollection('location_features'),
       ]);
     } on LocationsApiException {
       // Location pins remain useful when optional feature collections are private.
@@ -74,6 +73,8 @@ class LocationsApi {
     final featuresByLocation = <String, Set<String>>{};
     for (final relation
         in relatedFeatures.length < 2 ? const [] : relatedFeatures[1]) {
+      // A feature marked unavailable (e.g. broken elevator) isn't shown.
+      if (relation['availability'] == false) continue;
       final locationId = _referenceId(
         _firstText(relation, const [
           'location_id',
@@ -98,10 +99,17 @@ class LocationsApi {
       }
     }
 
+    final covers = await _coverPhotos();
     final result = <AccessibleLocation>[];
     for (final document in locations) {
-      final status = (_text(document['status']) ?? '').toLowerCase();
+      final status =
+          (_text(document['verification_status']) ??
+                  _text(document['status']) ??
+                  '')
+              .toLowerCase();
       if (_isInactive(status)) continue;
+      final id = document['location_id'] ?? document['id'];
+      if (id == null) continue;
       final latitude = _coordinate(
         document,
         const ['latitude', 'lat'],
@@ -141,7 +149,7 @@ class LocationsApi {
       }.toList(growable: false);
       result.add(
         AccessibleLocation(
-          id: document['id']!,
+          id: id.toString(),
           name: name,
           address:
               _firstText(document, const [
@@ -156,8 +164,12 @@ class LocationsApi {
           features: features,
           rating:
               _number(document['rating']) ??
+              // 0 is the database default, meaning "not rated yet".
+              _rated(_number(document['accessibility_score'])) ??
               _number(document['average_rating']) ??
               _number(document['averageRating']),
+          googlePlaceId: _text(document['google_place_id']),
+          photoUrl: covers[id.toString()],
         ),
       );
     }
@@ -165,93 +177,19 @@ class LocationsApi {
   }
 
   static Future<List<Map<String, dynamic>>> _listCollection(
-    String collection,
-    String? token,
+    String table,
   ) async {
-    final documents = <Map<String, dynamic>>[];
-    String? pageToken;
-    do {
-      final uri = Uri.parse(
-        '$_documentsUrl/$collection',
-      ).replace(queryParameters: {'pageSize': '100', 'pageToken': ?pageToken});
-      http.Response response;
-      try {
-        response = await http
-            .get(uri, headers: _authHeaders(token))
-            .timeout(const Duration(seconds: 20));
-      } on Exception catch (error) {
-        throw LocationsApiException('Could not load map locations: $error');
-      }
-      dynamic body;
-      try {
-        body = jsonDecode(response.body);
-      } on FormatException {
-        throw LocationsApiException(
-          'Firestore returned an unreadable response (HTTP ${response.statusCode}).',
-          statusCode: response.statusCode,
-        );
-      }
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final error = body is Map ? body['error'] : null;
-        final message = error is Map ? error['message'] as String? : null;
-        throw LocationsApiException(
-          message ?? 'Could not read the locations collection from Firestore.',
-          statusCode: response.statusCode,
-        );
-      }
-      final page = body is Map ? body : const <String, dynamic>{};
-      final rawDocuments = page['documents'];
-      if (rawDocuments is List) {
-        documents.addAll(
-          rawDocuments.whereType<Map>().map((document) {
-            final path = document['name'] as String? ?? '';
-            final fields = document['fields'];
-            final decodedFields = fields is Map
-                ? Map<String, dynamic>.from(
-                    fields.map(
-                      (key, value) => MapEntry(key.toString(), _decode(value)),
-                    ),
-                  )
-                : null;
-            return {'id': path.split('/').last, ...?decodedFields};
-          }),
-        );
-      }
-      pageToken = page['nextPageToken'] as String?;
-    } while (pageToken != null && documents.length < 500);
-    return documents;
-  }
-
-  static dynamic _decode(dynamic value) {
-    if (value is! Map) return value;
-    if (value.containsKey('stringValue')) return value['stringValue'];
-    if (value.containsKey('integerValue')) {
-      return num.tryParse(value['integerValue'].toString());
+    try {
+      final rows = await Supabase.instance.client
+          .from(table)
+          .select()
+          .limit(500);
+      return rows.map((row) => Map<String, dynamic>.from(row)).toList();
+    } on PostgrestException catch (error) {
+      throw LocationsApiException('Could not load $table: ${error.message}');
+    } on Exception catch (error) {
+      throw LocationsApiException('Could not load $table: $error');
     }
-    if (value.containsKey('doubleValue')) return value['doubleValue'];
-    if (value.containsKey('booleanValue')) return value['booleanValue'];
-    if (value.containsKey('timestampValue')) return value['timestampValue'];
-    if (value.containsKey('geoPointValue')) {
-      final point = value['geoPointValue'];
-      return point is Map
-          ? {'latitude': point['latitude'], 'longitude': point['longitude']}
-          : null;
-    }
-    if (value.containsKey('mapValue')) {
-      final fields = value['mapValue'] is Map
-          ? value['mapValue']['fields']
-          : null;
-      if (fields is! Map) return <String, dynamic>{};
-      return fields.map((key, item) => MapEntry(key.toString(), _decode(item)));
-    }
-    if (value.containsKey('arrayValue')) {
-      final values = value['arrayValue'] is Map
-          ? value['arrayValue']['values']
-          : null;
-      return values is List ? values.map(_decode).toList() : <dynamic>[];
-    }
-    if (value.containsKey('referenceValue')) return value['referenceValue'];
-    return null;
   }
 
   static double? _coordinate(
@@ -335,12 +273,40 @@ class LocationsApi {
     return text.isEmpty ? null : text;
   }
 
-  static Map<String, String> _authHeaders(String? token) {
-    if (token == null) return const {};
-    return {'Authorization': 'Bearer $token'};
+  static String? _referenceId(Object? value) =>
+      value?.toString().split('/').last;
+
+  /// First admin photo per place (oldest first, like the admin page's
+  /// "Cover"). The database only shows other people's photos when an admin
+  /// uploaded them for a verified place; the user's own report photos are
+  /// skipped so they don't become a cover for them.
+  static Future<Map<String, String>> _coverPhotos() async {
+    try {
+      final client = Supabase.instance.client;
+      final me = client.auth.currentUser?.id;
+      final rows = await client
+          .from('images')
+          .select('location_id, image_url, user_id')
+          .eq('upload_status', 'Uploaded')
+          .order('upload_date')
+          .order('image_id')
+          .limit(1000);
+      final covers = <String, String>{};
+      for (final row in rows) {
+        final url = _text(row['image_url']);
+        final location = row['location_id']?.toString();
+        if (url == null || location == null || row['user_id'] == me) continue;
+        if (!url.startsWith('https://')) continue;
+        covers.putIfAbsent(location, () => url);
+      }
+      return covers;
+    } on Exception {
+      return const {}; // Photos are optional; places still load.
+    }
   }
 
-  static String? _referenceId(String? value) => value?.split('/').last;
+  static double? _rated(double? score) =>
+      score != null && score > 0 ? score : null;
 
   static double? _number(dynamic value) {
     if (value is num) return value.toDouble();

@@ -1,16 +1,18 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'services/on_device_detector.dart';
 
 class ReportsApiException implements Exception {
   const ReportsApiException(this.message, {this.statusCode});
-
   final String message;
   final int? statusCode;
-
   @override
   String toString() => message;
 }
@@ -21,7 +23,6 @@ class SubmittedReport {
     required this.aiAnalysisStatus,
     required this.detections,
   });
-
   final String id;
   final String aiAnalysisStatus;
   final List<Map<String, dynamic>> detections;
@@ -65,30 +66,47 @@ class PhotoAnalysis {
 class ReportsApi {
   ReportsApi._();
 
+  /// Optional Cloudflare Worker. When unset, photos are analyzed by the
+  /// `roboflow-infer` Supabase Edge Function in the same project.
   static const String _workerUrl = String.fromEnvironment(
     'NAVABLE_REPORTS_API_URL',
   );
-  static const _projectId = 'nav4ble-22f2d';
-  static const _firestoreCommitUrl =
-      'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents:commit';
+  static const _analysisFunction = 'roboflow-infer';
   static const maxPhotoBytes = 700 * 1024;
   static const _maxPhotos = 5;
+  static const _bucket = 'report-photos';
 
+  /// Saves a report into the tables the admin app reads:
+  /// photos -> storage + `images`, the report -> `reports` (linked to the
+  /// first photo), and each AI detection -> `ai_results` for admin review.
   static Future<SubmittedReport> submit({
     required String title,
     required String detail,
     required String category,
-    required String location,
-    String? locationId,
+    required String? locationId,
     required List<Uint8List> photos,
     required PhotoAnalysis analysis,
+    String? coordinates,
+    String? googlePlaceId,
   }) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
     if (user == null) {
       throw const ReportsApiException(
         'Sign in to submit an accessibility report.',
       );
     }
+    // No NavAble place picked: suggest the pinned spot as a new Pending
+    // place, which an admin approves before it shows on the map.
+    final suggestedPlace = locationId == null || locationId.isEmpty
+        ? suggestedPlaceRow(
+            id: _uuidV4(),
+            name: title,
+            coordinates: coordinates,
+            googlePlaceId: googlePlaceId,
+          )
+        : null;
+    final placeId = suggestedPlace?['location_id'] as String? ?? locationId!;
     _validatePhotos(photos);
     if (analysis.photoSuggestions.length != photos.length) {
       throw const ReportsApiException(
@@ -96,74 +114,285 @@ class ReportsApi {
       );
     }
 
-    final token = await user.getIdToken();
-    if (token == null || token.isEmpty) {
-      throw const ReportsApiException(
-        'Could not obtain a Firebase sign-in token.',
+    final reportId = _uuidV4();
+    final imageIds = List<String>.generate(photos.length, (_) => _uuidV4());
+    final paths = <String>[];
+    var insertedImages = false;
+    var insertedReport = false;
+    var insertedPlace = false;
+    try {
+      if (suggestedPlace != null) {
+        await client.from('locations').insert(suggestedPlace);
+        insertedPlace = true;
+      }
+      final storage = client.storage.from(_bucket);
+      final imageRows = <Map<String, dynamic>>[];
+      for (var index = 0; index < photos.length; index++) {
+        final contentType = _contentType(photos[index])!;
+        final extension = switch (contentType) {
+          'image/png' => 'png',
+          'image/webp' => 'webp',
+          _ => 'jpg',
+        };
+        final name = 'photo_$index.$extension';
+        final path = '${user.id}/$reportId/$name';
+        await storage.uploadBinary(
+          path,
+          photos[index],
+          fileOptions: FileOptions(contentType: contentType),
+        );
+        paths.add(path);
+        imageRows.add({
+          'image_id': imageIds[index],
+          'user_id': user.id,
+          'location_id': placeId,
+          'image_url': storage.getPublicUrl(path),
+          'image_name': name,
+          'image_size': (photos[index].lengthInBytes + 1023) ~/ 1024, // KiB
+          'upload_status': 'Uploaded',
+        });
+      }
+      await client.from('images').insert(imageRows);
+      insertedImages = true;
+
+      await client.from('reports').insert({
+        'report_id': reportId,
+        'user_id': user.id,
+        'location_id': placeId,
+        'image_id': imageIds.first,
+        'report_type': reportTypeFor(category),
+        'description': reportDescription(
+          category: category,
+          title: title,
+          detail: detail,
+        ),
+        'status': 'Pending',
+        'priority_level': 'Medium',
+      });
+      insertedReport = true;
+    } on PostgrestException catch (error) {
+      await _cleanupFailedSubmission(
+        client,
+        reportId: insertedReport ? reportId : null,
+        imageIds: insertedImages ? imageIds : const [],
+        paths: paths,
+        placeId: insertedPlace ? placeId : null,
       );
+      throw ReportsApiException('Could not save the report: ${error.message}');
+    } on StorageException catch (error) {
+      await _cleanupFailedSubmission(
+        client,
+        paths: paths,
+        placeId: insertedPlace ? placeId : null,
+      );
+      throw ReportsApiException(
+        'Could not upload the photos: ${error.message}',
+      );
+    } on Exception catch (error) {
+      await _cleanupFailedSubmission(
+        client,
+        reportId: insertedReport ? reportId : null,
+        imageIds: insertedImages ? imageIds : const [],
+        paths: paths,
+        placeId: insertedPlace ? placeId : null,
+      );
+      throw ReportsApiException('Could not submit the report: $error');
     }
 
-    final reportId = _newDocumentId();
-    await _saveReport(
-      reportId: reportId,
-      userId: user.uid,
-      token: token,
-      title: title,
-      detail: detail,
-      category: category,
-      location: location,
-      locationId: locationId,
-      photos: photos,
-      suggestions: analysis.photoSuggestions,
-      status: analysis.status,
-    );
-
+    // The report is saved. AI suggestions are extra: if they can't be
+    // stored, keep the report and let admins review the photos directly.
+    var aiStatus = analysis.status;
+    final aiRows = aiResultRows(analysis: analysis, imageIds: imageIds);
+    if (aiRows.isNotEmpty) {
+      try {
+        await client.from('ai_results').insert(aiRows);
+      } on Exception {
+        aiStatus = 'failed';
+      }
+    }
     return SubmittedReport(
       id: reportId,
-      aiAnalysisStatus: analysis.status,
+      aiAnalysisStatus: aiStatus,
       detections: analysis.detections,
     );
+  }
+
+  static const _aiModel =
+      'Roboflow RF-DETR Small (navable-accessibility-detection v2)';
+
+  /// Maps the app's report categories onto the database's report types.
+  /// Photos of an existing feature have no matching problem type, so they
+  /// are filed as "Others" with the category kept in the description.
+  @visibleForTesting
+  static String reportTypeFor(String category) {
+    final value = category.toLowerCase();
+    if (value.contains('broken') && value.contains('ramp')) {
+      return 'Broken Ramp';
+    }
+    if (value.contains('broken') && value.contains('elevator')) {
+      return 'Broken Elevator';
+    }
+    if (value.contains('blocked') && value.contains('entrance')) {
+      return 'Blocked Entrance';
+    }
+    if (value.contains('construction')) return 'Construction';
+    return 'Others';
+  }
+
+  /// `reports.description` holds at most 500 characters.
+  @visibleForTesting
+  static String reportDescription({
+    required String category,
+    required String title,
+    required String detail,
+  }) {
+    final text = '[$category] ${title.trim()}: ${detail.trim()}';
+    return text.length <= 500 ? text : '${text.substring(0, 499)}…';
+  }
+
+  /// One `ai_results` row per detection, confidence as a 0–100 percentage.
+  @visibleForTesting
+  static List<Map<String, dynamic>> aiResultRows({
+    required PhotoAnalysis analysis,
+    required List<String> imageIds,
+  }) {
+    final rows = <Map<String, dynamic>>[];
+    for (final suggestion in analysis.photoSuggestions) {
+      final index = suggestion['photoIndex'];
+      final detections = suggestion['detections'];
+      if (index is! int || index < 0 || index >= imageIds.length) continue;
+      if (detections is! List) continue;
+      for (final detection in detections.whereType<Map>()) {
+        final label =
+            detection['class'] ?? detection['label'] ?? detection['class_name'];
+        final confidence = detection['confidence'];
+        if (label is! String || label.trim().isEmpty) continue;
+        if (confidence is! num || !confidence.isFinite) continue;
+        final percent = (confidence <= 1 ? confidence * 100 : confidence)
+            .clamp(0, 100)
+            .toDouble();
+        final feature = label.trim();
+        rows.add({
+          'image_id': imageIds[index],
+          'detected_feature': feature.length <= 100
+              ? feature
+              : feature.substring(0, 100),
+          'confidence_score': (percent * 100).round() / 100,
+          'detection_status': 'Needs Verification',
+          'ai_model': suggestion['model'] is String
+              ? suggestion['model']
+              : _aiModel,
+          'verified': false,
+        });
+      }
+    }
+    return rows;
+  }
+
+  static Future<void> _cleanupFailedSubmission(
+    SupabaseClient client, {
+    String? reportId,
+    List<String> imageIds = const [],
+    List<String> paths = const [],
+    String? placeId,
+  }) async {
+    if (reportId != null) {
+      try {
+        await client.from('reports').delete().eq('report_id', reportId);
+      } on Exception {
+        // Preserve the original submission error.
+      }
+    }
+    if (imageIds.isNotEmpty) {
+      try {
+        await client.from('images').delete().inFilter('image_id', imageIds);
+      } on Exception {
+        // Preserve the original submission error.
+      }
+    }
+    if (paths.isNotEmpty) {
+      try {
+        await client.storage.from(_bucket).remove(paths);
+      } on Exception {
+        // An interrupted cleanup may leave orphan files for administrator review.
+      }
+    }
+    if (placeId != null) {
+      try {
+        await client.from('locations').delete().eq('location_id', placeId);
+      } on Exception {
+        // A leftover Pending place is harmless; an admin can reject it.
+      }
+    }
+  }
+
+  /// A new place the user pinned, saved as Pending for an admin to approve.
+  /// Status, score and owner come from database defaults.
+  @visibleForTesting
+  static Map<String, dynamic> suggestedPlaceRow({
+    required String id,
+    required String name,
+    required String? coordinates,
+    String? googlePlaceId,
+  }) {
+    final match = RegExp(
+      r'^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$',
+    ).firstMatch(coordinates ?? '');
+    final latitude = double.tryParse(match?[1] ?? '');
+    final longitude = double.tryParse(match?[2] ?? '');
+    if (latitude == null ||
+        longitude == null ||
+        latitude.abs() > 90 ||
+        longitude.abs() > 180) {
+      throw const ReportsApiException('Pin the place on the map first.');
+    }
+    final placeName = name.trim();
+    if (placeName.isEmpty) {
+      throw const ReportsApiException(
+        'Enter the place name so an admin can add it to NavAble.',
+      );
+    }
+    return {
+      'location_id': id,
+      'location_name': placeName.length <= 150
+          ? placeName
+          : placeName.substring(0, 150),
+      'category': 'User suggested',
+      'address':
+          '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}',
+      'latitude': latitude,
+      'longitude': longitude,
+      if (googlePlaceId != null && googlePlaceId.isNotEmpty)
+        'google_place_id': googlePlaceId,
+    };
   }
 
   static Future<PhotoAnalysis> analyzePhotos({
     required List<Uint8List> photos,
   }) async {
     _validatePhotos(photos);
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw const ReportsApiException('Sign in to scan accessibility photos.');
-    }
-    final token = await user.getIdToken();
-    if (token == null || token.isEmpty) {
+    final session = Supabase.instance.client.auth.currentSession;
+    if (session == null) {
       throw const ReportsApiException(
-        'Could not obtain a Firebase sign-in token.',
+        'Your sign-in expired. Sign in again to scan photos.',
       );
     }
-    if (_workerUrl.isEmpty) {
-      return PhotoAnalysis.failedFor(
-        photos.length,
-        message:
-            'AI scanning is not configured. You can still submit for admin review.',
-      );
-    }
-
     final suggestions = <Map<String, dynamic>>[];
     var failedAnalyses = 0;
-    for (var index = 0; index < photos.length; index += 1) {
+    for (var index = 0; index < photos.length; index++) {
       try {
         suggestions.add({
           'photoIndex': index,
-          ...await _analyzePhoto(photos[index], token),
+          ...await _analyzePhoto(photos[index], session.accessToken),
         });
       } on ReportsApiException {
-        failedAnalyses += 1;
+        failedAnalyses++;
         suggestions.add(
           PhotoAnalysis.failedFor(1).photoSuggestions.single
             ..['photoIndex'] = index,
         );
       }
     }
-
     final status = failedAnalyses == 0
         ? 'completed'
         : failedAnalyses == photos.length
@@ -188,7 +417,7 @@ class ReportsApi {
       }
       if (photo.lengthInBytes > maxPhotoBytes) {
         throw const ReportsApiException(
-          'Each photo must be 700 KiB or smaller to fit the Spark Firestore limit.',
+          'Each photo must be 700 KiB or smaller.',
         );
       }
     }
@@ -196,6 +425,40 @@ class ReportsApi {
 
   static Future<Map<String, dynamic>> _analyzePhoto(
     Uint8List photo,
+    String token,
+  ) async {
+    // The bundled YOLO model runs offline; fall back to the online service
+    // on the web or before a model has been added to assets/models/.
+    final onDevice = await OnDeviceDetector.detect(photo);
+    if (onDevice != null) return onDevice;
+    final request = {
+      'inputs': {
+        'image': {'type': 'base64', 'value': base64Encode(photo)},
+      },
+    };
+    final (statusCode, body) = _workerUrl.isEmpty
+        ? await _callEdgeFunction(request)
+        : await _callWorker(request, token);
+    return parseAnalysisResponse(statusCode, body);
+  }
+
+  static Future<(int, dynamic)> _callEdgeFunction(
+    Map<String, dynamic> request,
+  ) async {
+    try {
+      final response = await Supabase.instance.client.functions
+          .invoke(_analysisFunction, body: request)
+          .timeout(const Duration(seconds: 90));
+      return (response.status, response.data);
+    } on FunctionException catch (error) {
+      return (error.status, error.details);
+    } on Exception catch (error) {
+      throw ReportsApiException('Could not reach photo analysis: $error');
+    }
+  }
+
+  static Future<(int, dynamic)> _callWorker(
+    Map<String, dynamic> request,
     String token,
   ) async {
     http.Response response;
@@ -207,33 +470,42 @@ class ReportsApi {
               'Authorization': 'Bearer $token',
               'Content-Type': 'application/json',
             },
-            body: jsonEncode({
-              'inputs': {
-                'image': {'type': 'base64', 'value': base64Encode(photo)},
-              },
-            }),
+            body: jsonEncode(request),
           )
           .timeout(const Duration(seconds: 90));
     } on Exception catch (error) {
-      throw ReportsApiException('Could not reach Roboflow analysis: $error');
+      throw ReportsApiException('Could not reach photo analysis: $error');
     }
-
-    dynamic body;
     try {
-      body = jsonDecode(response.body);
+      return (response.statusCode, jsonDecode(response.body));
     } on FormatException {
       throw ReportsApiException(
         'The analysis service returned an unreadable response (HTTP ${response.statusCode}).',
         statusCode: response.statusCode,
       );
     }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+  }
+
+  /// Turns the analysis service's reply into `{image, detections}`.
+  @visibleForTesting
+  static Map<String, dynamic> parseAnalysisResponse(
+    int statusCode,
+    dynamic body,
+  ) {
+    if (body is String) {
+      try {
+        body = jsonDecode(body);
+      } on FormatException {
+        body = null;
+      }
+    }
+    if (statusCode < 200 || statusCode >= 300) {
       final message = body is Map && body['error'] is Map
           ? body['error']['message'] as String?
           : null;
       throw ReportsApiException(
-        message ?? 'Photo analysis failed (HTTP ${response.statusCode}).',
-        statusCode: response.statusCode,
+        message ?? 'Photo analysis failed (HTTP $statusCode).',
+        statusCode: statusCode,
       );
     }
     if (body is! Map || body['detections'] is! List) {
@@ -254,155 +526,111 @@ class ReportsApi {
     };
   }
 
-  static Future<void> _saveReport({
-    required String reportId,
-    required String userId,
-    required String token,
+  /// The app's choices for `bug_reports.area` (the admin Bug Reports page
+  /// filters by these). "Website" is left out: it's for the public site.
+  static const bugAreas = [
+    'Map & Navigation',
+    'Accessibility Reports',
+    'Reviews',
+    'Account & Sign-in',
+    'Notifications',
+    'Other',
+  ];
+
+  /// Sends a problem with the app itself to the admin Bug Reports page.
+  /// The database fills in the reporter and starts it as New / Medium.
+  static Future<void> submitBug({
+    required String area,
     required String title,
-    required String detail,
-    required String category,
-    required String location,
-    required String? locationId,
-    required List<Uint8List> photos,
-    required List<Map<String, dynamic>> suggestions,
-    required String status,
+    required String description,
+    Uint8List? screenshot,
   }) async {
-    final locationMatch = RegExp(
-      r'^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$',
-    ).firstMatch(location);
-    final latitude = locationMatch == null
-        ? null
-        : double.tryParse(locationMatch[1]!);
-    final longitude = locationMatch == null
-        ? null
-        : double.tryParse(locationMatch[2]!);
-    final now = DateTime.now().toUtc();
-    final writes = <Map<String, dynamic>>[
-      _createDocumentWrite('reports/$reportId', {
-        'title': title,
-        'detail': detail,
-        'category': category,
-        'location': location,
-        'locationId': locationId,
-        'latitude': latitude,
-        'longitude': longitude,
-        'status': 'pending',
-        'aiAnalysisStatus': status,
-        'aiSuggestions': suggestions,
-        'photoCount': photos.length,
-        'photoIds': List<String>.generate(
-          photos.length,
-          (index) => 'photo_$index',
-        ),
-        'submittedBy': userId,
-        'createdAt': now,
-        'reviewedAt': null,
-        'reviewedBy': null,
-        'reviewNote': null,
-      }),
-    ];
-    for (var index = 0; index < photos.length; index += 1) {
-      writes.add(
-        _createDocumentWrite('reports/$reportId/photos/photo_$index', {
-          'photoBytes': photos[index],
-          'contentType': _contentType(photos[index]),
-          'detections': suggestions[index]['detections'],
-          'image': suggestions[index]['image'],
-          'photoIndex': index,
-          'submittedBy': userId,
-        }),
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    final cleanTitle = title.trim();
+    final cleanDescription = description.trim();
+    if (cleanTitle.isEmpty || cleanDescription.isEmpty) {
+      throw const ReportsApiException(
+        'Add a short title and describe what happened.',
       );
     }
 
-    http.Response response;
-    try {
-      response = await http
-          .post(
-            Uri.parse(_firestoreCommitUrl),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({'writes': writes}),
-          )
-          .timeout(const Duration(seconds: 45));
-    } on Exception catch (error) {
-      throw ReportsApiException(
-        'Could not save the report to Firestore: $error',
-      );
-    }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      String? message;
+    String? path;
+    String? screenshotUrl;
+    if (screenshot != null) {
+      if (user == null) {
+        throw const ReportsApiException('Sign in to attach a screenshot.');
+      }
+      final contentType = _contentType(screenshot);
+      if (contentType == null) {
+        throw const ReportsApiException('Use a JPEG, PNG, or WebP screenshot.');
+      }
+      if (screenshot.lengthInBytes > maxPhotoBytes) {
+        throw const ReportsApiException(
+          'The screenshot must be 700 KiB or smaller.',
+        );
+      }
+      final extension = switch (contentType) {
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        _ => 'jpg',
+      };
+      path = '${user.id}/bugs/${_uuidV4()}.$extension';
+      final storage = client.storage.from(_bucket);
       try {
-        final decoded = jsonDecode(response.body);
-        final error = decoded is Map ? decoded['error'] : null;
-        message = error is Map ? error['message'] as String? : null;
-      } on Object {
-        message = null;
+        await storage.uploadBinary(
+          path,
+          screenshot,
+          fileOptions: FileOptions(contentType: contentType),
+        );
+      } on StorageException catch (error) {
+        throw ReportsApiException(
+          'Could not upload the screenshot: ${error.message}',
+        );
+      }
+      screenshotUrl = storage.getPublicUrl(path);
+    }
+
+    try {
+      await client.from('bug_reports').insert({
+        'title': _limit(cleanTitle, 150),
+        'description': _limit(cleanDescription, 2000),
+        'area': bugAreas.contains(area) ? area : 'Other',
+        'source': 'App',
+        'device_info': _limit(_deviceInfo(), 255),
+        'screenshot_url': screenshotUrl,
+        'reporter_email': user?.email,
+      });
+    } on PostgrestException catch (error) {
+      if (path != null) {
+        try {
+          await client.storage.from(_bucket).remove([path]);
+        } on Exception {
+          // A leftover screenshot is harmless.
+        }
       }
       throw ReportsApiException(
-        message ??
-            'Firestore could not save the report (HTTP ${response.statusCode}). Check your Firestore rules.',
-        statusCode: response.statusCode,
+        'Could not send the bug report: ${error.message}',
       );
     }
   }
 
-  static Map<String, dynamic> _createDocumentWrite(
-    String documentPath,
-    Map<String, dynamic> values,
-  ) {
-    return {
-      'update': {
-        'name':
-            'projects/$_projectId/databases/(default)/documents/$documentPath',
-        'fields': _firestoreFields(values),
-      },
-      'currentDocument': {'exists': false},
-    };
-  }
+  static String _deviceInfo() => kIsWeb
+      ? 'NavAble web app'
+      : 'NavAble app on ${Platform.operatingSystem} '
+            '${Platform.operatingSystemVersion}';
 
-  static Map<String, dynamic> _firestoreFields(Map<String, dynamic> values) =>
-      values.map((key, value) => MapEntry(key, _firestoreValue(value)));
+  static String _limit(String text, int max) =>
+      text.length <= max ? text : text.substring(0, max);
 
-  static Map<String, dynamic> _firestoreValue(Object? value) {
-    if (value == null) return {'nullValue': null};
-    if (value is Uint8List) return {'bytesValue': base64Encode(value)};
-    if (value is String) return {'stringValue': value};
-    if (value is bool) return {'booleanValue': value};
-    if (value is int) return {'integerValue': value.toString()};
-    if (value is num) return {'doubleValue': value.toDouble()};
-    if (value is DateTime) {
-      return {'timestampValue': value.toUtc().toIso8601String()};
-    }
-    if (value is Map) {
-      return {
-        'mapValue': {
-          'fields': _firestoreFields(Map<String, dynamic>.from(value)),
-        },
-      };
-    }
-    if (value is Iterable) {
-      return {
-        'arrayValue': {
-          'values': value.map(_firestoreValue).toList(growable: false),
-        },
-      };
-    }
-    throw ReportsApiException(
-      'Cannot save unsupported Firestore value: ${value.runtimeType}.',
-    );
-  }
-
-  static String _newDocumentId() {
-    const alphabet =
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  static String _uuidV4() {
     final random = Random.secure();
-    return List<String>.generate(
-      20,
-      (_) => alphabet[random.nextInt(alphabet.length)],
-      growable: false,
-    ).join();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
   static String? _contentType(Uint8List bytes) {

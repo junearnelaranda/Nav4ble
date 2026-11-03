@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'auth_service.dart';
+import 'services/auth_service.dart';
 import 'home.dart';
 import 'login.dart';
 import 'navable_design.dart';
@@ -17,6 +17,7 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen>
     with SingleTickerProviderStateMixin {
+  final _authService = AuthService();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -71,7 +72,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
 
     setState(() => _isLoading = true);
-    final result = await AuthService.register(
+    final result = await _authService.register(
       fullName: _nameController.text,
       email: _emailController.text,
       password: _passwordController.text,
@@ -87,6 +88,19 @@ class _RegisterScreenState extends State<RegisterScreen>
       return;
     }
 
+    if (result.needsConfirmation) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message ?? 'Check your email, then sign in.'),
+        ),
+      );
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+      return;
+    }
+
     Navigator.of(context).pushAndRemoveUntil(
       _fadeRoute(const SplashScreen(nextScreen: HomeScreen())),
       (route) => false,
@@ -96,312 +110,326 @@ class _RegisterScreenState extends State<RegisterScreen>
   void _showGooglePlaceholder() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Google sign up needs Firebase or Google Sign-In setup.'),
+        content: Text('Google sign up needs Supabase Google provider setup.'),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _PremiumBackground(
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                    child: FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: SlideTransition(
-                        position: _slideAnimation,
-                        child: Column(
-                          children: [
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: _BackButton(
-                                onPressed: () =>
-                                    Navigator.of(context).maybePop(),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            Container(
-                              width: 72,
-                              height: 72,
-                              decoration: BoxDecoration(
-                                color: kNavAbleAccent,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: const Color(0xFFDDE5DF),
+    return NavAbleLightTheme(
+      child: Scaffold(
+        body: _PremiumBackground(
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                      child: FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: SlideTransition(
+                          position: _slideAnimation,
+                          child: Column(
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: _BackButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).maybePop(),
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: kNavAbleNavy.withValues(alpha: 0.07),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 10),
+                              ),
+                              const SizedBox(height: 14),
+                              Container(
+                                width: 72,
+                                height: 72,
+                                decoration: BoxDecoration(
+                                  color: kNavAbleAccent,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: const Color(0xFFDDE5DF),
                                   ),
-                                ],
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: kNavAbleNavy.withValues(
+                                        alpha: 0.07,
+                                      ),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.person_add_alt_1_outlined,
+                                  color: kNavAbleGreen,
+                                  size: 34,
+                                ),
                               ),
-                              child: const Icon(
-                                Icons.person_add_alt_1_outlined,
-                                color: kNavAbleGreen,
-                                size: 34,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            const Text(
-                              'Create Your Account',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: kNavAbleNavy,
-                                fontSize: 25,
-                                height: 1.18,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 320),
-                              child: Text(
-                                'Join NavAble for smart, accessible navigation tailored to your needs.',
+                              const SizedBox(height: 24),
+                              const Text(
+                                'Create Your Account',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: kNavAbleText,
-                                  fontSize: 14,
-                                  height: 1.55,
-                                  letterSpacing: 0,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 28),
-                            _PremiumCard(
-                              child: Form(
-                                key: _formKey,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _RegisterField(
-                                      label: 'Full Name',
-                                      icon: Icons.person_outline,
-                                      hintText: 'Enter your full name',
-                                      controller: _nameController,
-                                      keyboardType: TextInputType.name,
-                                      textCapitalization:
-                                          TextCapitalization.words,
-                                      textInputAction: TextInputAction.next,
-                                      autofillHints: const [AutofillHints.name],
-                                      validator: (value) {
-                                        if ((value ?? '').trim().length < 2) {
-                                          return 'Enter your full name.';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                    const SizedBox(height: 20),
-                                    _RegisterField(
-                                      label: 'Email Address',
-                                      icon: Icons.email_outlined,
-                                      hintText: 'email@example.com',
-                                      controller: _emailController,
-                                      keyboardType: TextInputType.emailAddress,
-                                      textInputAction: TextInputAction.next,
-                                      autofillHints: const [
-                                        AutofillHints.email,
-                                      ],
-                                      validator: (value) {
-                                        if (!AuthService.isValidEmail(
-                                          value ?? '',
-                                        )) {
-                                          return 'Enter a valid email address.';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                    const SizedBox(height: 20),
-                                    _RegisterField(
-                                      label: 'Create Password',
-                                      icon: Icons.lock_outline,
-                                      hintText: 'At least 8 characters',
-                                      controller: _passwordController,
-                                      obscureText: _obscurePassword,
-                                      textInputAction: TextInputAction.next,
-                                      autofillHints: const [
-                                        AutofillHints.newPassword,
-                                      ],
-                                      validator: (value) {
-                                        if ((value ?? '').length < 8) {
-                                          return 'Use at least 8 characters.';
-                                        }
-                                        return null;
-                                      },
-                                      suffixIcon: IconButton(
-                                        tooltip: _obscurePassword
-                                            ? 'Show password'
-                                            : 'Hide password',
-                                        onPressed: () {
-                                          setState(
-                                            () => _obscurePassword =
-                                                !_obscurePassword,
-                                          );
-                                        },
-                                        icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_off_outlined
-                                              : Icons.visibility_outlined,
-                                          color: const Color(0xFF5F6B7A),
-                                          size: 20,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    _RegisterField(
-                                      label: 'Confirm Password',
-                                      icon: Icons.lock_reset,
-                                      hintText: 'Repeat your password',
-                                      controller: _confirmPasswordController,
-                                      obscureText: _obscureConfirmPassword,
-                                      textInputAction: TextInputAction.done,
-                                      autofillHints: const [
-                                        AutofillHints.newPassword,
-                                      ],
-                                      validator: (value) {
-                                        if ((value ?? '').isEmpty) {
-                                          return 'Confirm your password.';
-                                        }
-                                        if (value != _passwordController.text) {
-                                          return 'Passwords do not match.';
-                                        }
-                                        return null;
-                                      },
-                                      onFieldSubmitted: (_) => _register(),
-                                      suffixIcon: IconButton(
-                                        tooltip: _obscureConfirmPassword
-                                            ? 'Show password'
-                                            : 'Hide password',
-                                        onPressed: () {
-                                          setState(
-                                            () => _obscureConfirmPassword =
-                                                !_obscureConfirmPassword,
-                                          );
-                                        },
-                                        icon: Icon(
-                                          _obscureConfirmPassword
-                                              ? Icons.visibility_off_outlined
-                                              : Icons.visibility_outlined,
-                                          color: const Color(0xFF5F6B7A),
-                                          size: 20,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 18),
-                                    _TermsAgreement(
-                                      value: _acceptedTerms,
-                                      showError: _showTermsError,
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _acceptedTerms = value;
-                                          if (value) {
-                                            _showTermsError = false;
-                                          }
-                                        });
-                                      },
-                                    ),
-                                    const SizedBox(height: 22),
-                                    _PrimaryButton(
-                                      label: _isLoading
-                                          ? 'Creating account…'
-                                          : 'Sign Up',
-                                      onPressed: _register,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            const _DividerLabel(),
-                            const SizedBox(height: 20),
-                            SizedBox(
-                              width: double.infinity,
-                              height: NavAbleSize.primaryButton,
-                              child: OutlinedButton(
-                                onPressed: _showGooglePlaceholder,
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: kNavAbleNavy,
-                                  backgroundColor: Colors.white.withValues(
-                                    alpha: 0.78,
-                                  ),
-                                  side: const BorderSide(
-                                    color: Color(0xFFDDE5DF),
-                                    width: 1.4,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(
-                                      NavAbleRadius.button,
-                                    ),
-                                  ),
-                                ),
-                                child: const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _GoogleLogo(),
-                                    SizedBox(width: 14),
-                                    Text(
-                                      'Sign Up with Google',
-                                      style: TextStyle(
-                                        color: kNavAbleNavy,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 26),
-                            const Text(
-                              'Already have an account?',
-                              style: TextStyle(
-                                color: Color(0xFF344054),
-                                fontSize: 14,
-                                letterSpacing: 0,
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.of(context).pushReplacement(
-                                  _fadeRoute(const LoginScreen()),
-                                );
-                              },
-                              style: TextButton.styleFrom(
-                                minimumSize: Size.zero,
-                                padding: const EdgeInsets.only(top: 5),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: const Text(
-                                'Sign In Here',
-                                style: TextStyle(
-                                  color: kNavAbleGreen,
-                                  fontSize: 14,
+                                  color: kNavAbleNavy,
+                                  fontSize: 25,
+                                  height: 1.18,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 0,
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 24),
-                            const _HelpNotice(),
-                          ],
+                              const SizedBox(height: 12),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 320,
+                                ),
+                                child: Text(
+                                  'Join NavAble for smart, accessible navigation tailored to your needs.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: kNavAbleText,
+                                    fontSize: 14,
+                                    height: 1.55,
+                                    letterSpacing: 0,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 28),
+                              _PremiumCard(
+                                child: Form(
+                                  key: _formKey,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _RegisterField(
+                                        label: 'Full Name',
+                                        icon: Icons.person_outline,
+                                        hintText: 'Enter your full name',
+                                        controller: _nameController,
+                                        keyboardType: TextInputType.name,
+                                        textCapitalization:
+                                            TextCapitalization.words,
+                                        textInputAction: TextInputAction.next,
+                                        autofillHints: const [
+                                          AutofillHints.name,
+                                        ],
+                                        validator: (value) {
+                                          if ((value ?? '').trim().length < 2) {
+                                            return 'Enter your full name.';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                      const SizedBox(height: 20),
+                                      _RegisterField(
+                                        label: 'Email Address',
+                                        icon: Icons.email_outlined,
+                                        hintText: 'email@example.com',
+                                        controller: _emailController,
+                                        keyboardType:
+                                            TextInputType.emailAddress,
+                                        textInputAction: TextInputAction.next,
+                                        autofillHints: const [
+                                          AutofillHints.email,
+                                        ],
+                                        validator: (value) {
+                                          if (!AuthService.isValidEmail(
+                                            value ?? '',
+                                          )) {
+                                            return 'Enter a valid email address.';
+                                          }
+                                          return null;
+                                        },
+                                      ),
+                                      const SizedBox(height: 20),
+                                      _RegisterField(
+                                        label: 'Create Password',
+                                        icon: Icons.lock_outline,
+                                        hintText: 'At least 8 characters',
+                                        controller: _passwordController,
+                                        obscureText: _obscurePassword,
+                                        textInputAction: TextInputAction.next,
+                                        autofillHints: const [
+                                          AutofillHints.newPassword,
+                                        ],
+                                        validator: (value) {
+                                          if ((value ?? '').length < 8) {
+                                            return 'Use at least 8 characters.';
+                                          }
+                                          return null;
+                                        },
+                                        suffixIcon: IconButton(
+                                          tooltip: _obscurePassword
+                                              ? 'Show password'
+                                              : 'Hide password',
+                                          onPressed: () {
+                                            setState(
+                                              () => _obscurePassword =
+                                                  !_obscurePassword,
+                                            );
+                                          },
+                                          icon: Icon(
+                                            _obscurePassword
+                                                ? Icons.visibility_off_outlined
+                                                : Icons.visibility_outlined,
+                                            color: const Color(0xFF5F6B7A),
+                                            size: 20,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 20),
+                                      _RegisterField(
+                                        label: 'Confirm Password',
+                                        icon: Icons.lock_reset,
+                                        hintText: 'Repeat your password',
+                                        controller: _confirmPasswordController,
+                                        obscureText: _obscureConfirmPassword,
+                                        textInputAction: TextInputAction.done,
+                                        autofillHints: const [
+                                          AutofillHints.newPassword,
+                                        ],
+                                        validator: (value) {
+                                          if ((value ?? '').isEmpty) {
+                                            return 'Confirm your password.';
+                                          }
+                                          if (value !=
+                                              _passwordController.text) {
+                                            return 'Passwords do not match.';
+                                          }
+                                          return null;
+                                        },
+                                        onFieldSubmitted: (_) => _register(),
+                                        suffixIcon: IconButton(
+                                          tooltip: _obscureConfirmPassword
+                                              ? 'Show password'
+                                              : 'Hide password',
+                                          onPressed: () {
+                                            setState(
+                                              () => _obscureConfirmPassword =
+                                                  !_obscureConfirmPassword,
+                                            );
+                                          },
+                                          icon: Icon(
+                                            _obscureConfirmPassword
+                                                ? Icons.visibility_off_outlined
+                                                : Icons.visibility_outlined,
+                                            color: const Color(0xFF5F6B7A),
+                                            size: 20,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 18),
+                                      _TermsAgreement(
+                                        value: _acceptedTerms,
+                                        showError: _showTermsError,
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _acceptedTerms = value;
+                                            if (value) {
+                                              _showTermsError = false;
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 22),
+                                      _PrimaryButton(
+                                        label: _isLoading
+                                            ? 'Creating account…'
+                                            : 'Sign Up',
+                                        onPressed: _register,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              const _DividerLabel(),
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                width: double.infinity,
+                                height: NavAbleSize.primaryButton,
+                                child: OutlinedButton(
+                                  onPressed: _showGooglePlaceholder,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: kNavAbleNavy,
+                                    backgroundColor: Colors.white.withValues(
+                                      alpha: 0.78,
+                                    ),
+                                    side: const BorderSide(
+                                      color: Color(0xFFDDE5DF),
+                                      width: 1.4,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        NavAbleRadius.button,
+                                      ),
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _GoogleLogo(),
+                                      SizedBox(width: 14),
+                                      Text(
+                                        'Sign Up with Google',
+                                        style: TextStyle(
+                                          color: kNavAbleNavy,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 26),
+                              const Text(
+                                'Already have an account?',
+                                style: TextStyle(
+                                  color: Color(0xFF344054),
+                                  fontSize: 14,
+                                  letterSpacing: 0,
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.of(context).pushReplacement(
+                                    _fadeRoute(const LoginScreen()),
+                                  );
+                                },
+                                style: TextButton.styleFrom(
+                                  minimumSize: Size.zero,
+                                  padding: const EdgeInsets.only(top: 5),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  'Sign In Here',
+                                  style: TextStyle(
+                                    color: kNavAbleGreen,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              const _HelpNotice(),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),

@@ -1,63 +1,42 @@
 # NavAble
 
-NavAble is a Flutter app for sharing accessibility reports. It uses Firebase Authentication and Cloud Firestore on the Firebase Spark plan. A Cloudflare Worker protects the Roboflow API key and runs the NavAble object-detection workflow. Photos are stored as byte fields in separate Firestore photo documents; Firebase Storage and Firebase Cloud Functions are not used.
+NavAble is a Flutter accessibility reporting app backed by one Supabase project. The mobile app uses Supabase Auth, Postgres, and private Storage. A Cloudflare Worker verifies Supabase access tokens before forwarding photos to the existing Roboflow object detection workflow. AI detections are suggestions; reports begin with `pending` status for human review.
 
-## Firebase setup
+## Configure Supabase
 
-The Firebase project is `nav4ble-22f2d`. FlutterFire configuration is in `lib/firebase_options.dart`; Android, iOS, and Web are configured. The app initializes Firebase and uses Firebase email/password Authentication. Enable Email/Password at Firebase Console > Authentication > Sign-in method.
+Create or choose the same Supabase project that the separate admin web app will use. In the Supabase SQL editor, review and apply [supabase/navable_schema.sql](supabase/navable_schema.sql). The script is a bootstrap schema for a new project; adapt it to any existing tables before running it. It creates the `report-photos` private bucket and policies for users and moderators. Assign moderator access using trusted `app_metadata.role` values `admin` or `moderator` from a server side administrative operation. Never put a secret or service role key in Flutter or the Worker.
 
-Firestore Security Rules must allow report and photo document writes from an authenticated owner. Review [firestore.rules.example](firestore.rules.example) and merge its `/reports/{reportId}` rules into the rules already configured in Firebase Console. Do not replace existing rules with the example without merging rules for your other collections. Admin verification requires a trusted Firebase Auth custom claim `admin: true`; do not set admin status in the client.
+Enable email/password authentication in Supabase. If email confirmation is enabled, newly registered users must confirm their email before signing in. Add `navable://auth-callback/` to Supabase Auth's allowed Redirect URLs for Android and iOS password recovery. For web, add your deployed app origin too. The app opens a new password form when Supabase completes a recovery callback.
 
-### Spark storage limits
-
-Every submitted photo is stored as a Firestore `bytes` field in its own document under `reports/{reportId}/photos/`. The app limits photos to 700 KiB so the image plus document fields stays below Firestore's 1 MiB document ceiling. The Spark free quota includes 1 GiB stored data, 20,000 writes/day, 50,000 reads/day, and 10 GiB/month outbound transfer. A report with five photos uses six document writes. Watch Firestore Usage; this approach is intended for small submissions and can fill the project's free storage quota. [Firestore quotas and pricing](https://firebase.google.com/docs/firestore/pricing), [Firestore document limits](https://firebase.google.com/docs/firestore/quotas).
-
-## Roboflow inference Worker
-
-The Worker forwards one base64 photo at a time to the verified workflow. It validates the Firebase ID token, stores the Roboflow API key as a Cloudflare Worker secret, applies request timeouts/retries, and returns sanitized detections. No key is included in Flutter or Firestore. The workflow has one `image` input, no runtime parameters, and returns the `predictions` output. AI results are suggestions; Firestore reports begin with `pending` review status.
-
-The Cloudflare Workers Free plan currently allows 100,000 requests/day and 10 ms CPU time per request. This Worker is small and spends most time waiting for Roboflow's network response. Exceeding free limits makes requests fail; it does not require switching Firebase from Spark. [Workers limits](https://developers.cloudflare.com/workers/platform/limits/).
-
-Roboflow has separate usage credits: its current Free Tier includes 10 credits/month, and cloud inference consumes credits at model-specific rates. Check the workspace usage page before broad use; free-tier usage can stop when included credits are exhausted. [Roboflow plans](https://roboflow.com/pricing), [credit usage](https://roboflow.com/credits).
-
-From the project root, sign in to Cloudflare and deploy the Worker:
+Copy `dart_defines.example.json` to `dart_defines.json` and fill in the project URL and publishable key from Supabase Project Settings > API. `dart_defines.json` is git-ignored. Then run:
 
 ```powershell
-npx wrangler@4 login
-npx wrangler@4 deploy --config worker/wrangler.toml
+flutter run --dart-define-from-file=dart_defines.json
 ```
 
-Add the Roboflow secret when prompted. Use a newly rotated key; any key pasted into chat or a terminal command should be revoked:
+In Android Studio, add `--dart-define-from-file=dart_defines.json` to the run configuration's *Additional run args*. Without these settings the app only shows "Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY to start NavAble."
+
+Pass the same defines to release builds. The publishable key may be in a client build; the Supabase service role or secret key must stay on trusted servers. If you omit the Worker URL, users can still submit photos for human review.
+
+The app stores each submitted photo under `report-photos/<user-id>/<report-id>/photo_<index>.<extension>`. A report row in `reports` and associated rows in `photo_submissions` share the same Supabase database as the admin app. The app accepts up to five JPEG, PNG, or WebP photos, each at most 700 KiB.
+
+## AI photo detection (Roboflow)
+
+Photos are analyzed by the `roboflow-infer` Supabase Edge Function ([supabase/functions/roboflow-infer](supabase/functions/roboflow-infer)), which checks the user is signed in and calls the NavAble Roboflow workflow. Add your Roboflow API key once in the Supabase dashboard under **Edge Functions > Secrets** as `ROBOFLOW_API_KEY`. Until then, scanning reports "Roboflow inference is not configured yet" and reports can still be submitted for admin review.
+
+Submitted reports are saved where the admin app reads them: photos in the public `report-photos` bucket and the `images` table, the report in `reports`, and each AI detection in `ai_results` as "Needs Verification". Reports must be for a Verified NavAble location. See [supabase/migrations](supabase/migrations).
+
+## AI Worker (optional, Cloudflare)
+
+The Cloudflare Worker below does the same job. The app uses it instead of the Edge Function only when `NAVABLE_REPORTS_API_URL` is set.
+
+Set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as Cloudflare Worker variables and `ROBOFLOW_API_KEY` as a Worker secret. The Worker calls Supabase Auth's `/auth/v1/user` endpoint to validate each user's access token, then sends the image to Roboflow. Configure the same Supabase project URL in Flutter and the Worker.
 
 ```powershell
+npx wrangler@4 deploy --config worker/wrangler.toml --var SUPABASE_URL:https://<project-ref>.supabase.co --var SUPABASE_PUBLISHABLE_KEY:<publishable-key>
 npx wrangler@4 secret put ROBOFLOW_API_KEY --config worker/wrangler.toml
 ```
 
-Cloudflare prints the Worker URL, similar to `https://navable-accessibility-ai.<your-workers-subdomain>.workers.dev`. Pass it when running the app:
+Cloudflare and Roboflow have separate free plan limits; check their current dashboards before wider deployment. The app allows manual submission when scanning is unavailable. The Worker tests run with `node --test` from `worker/`. A live smoke test requires `NAVABLE_WORKER_URL` and `SUPABASE_ACCESS_TOKEN`, then `npm run smoke -- C:\path\to\sample.jpg`.
 
-```powershell
-flutter run --dart-define="NAVABLE_REPORTS_API_URL=https://navable-accessibility-ai.<your-workers-subdomain>.workers.dev"
-```
-
-For a release build, provide the same `--dart-define` value to `flutter build`. The app sends each photo to `/infer` with the user's Firebase ID token. The Worker forwards the request to the workflow using its private `ROBOFLOW_API_KEY` secret.
-
-## Firestore report schema
-
-Each report is a document in the existing `reports` collection. It contains the title, description, category, location, owner UID, review status, AI analysis status, and sanitized suggestions. Each image is a separate subdocument with the image bytes, type, index, and that photo's detections. The API writes the report and all photo documents in one Firestore commit using the signed-in user's ID token, so Firestore Security Rules apply.
-
-The app accepts up to five JPEG, PNG, or WebP photos, each at most 700 KiB. No detection is treated as an approval. The Home map and Explore list read locations from the existing `locations` collection, with accessibility labels joined from `location_features` and `accessibility_features`. Firestore rules must allow the signed-in user to list those collections. Starting a photo submission from a database location carries its document ID and coordinates into the pending report.
-
-## Checks
-
-The Worker has dependency-free Node tests:
-
-```powershell
-cd worker
-node --test
-```
-
-Tests validate Firebase-token gating, the real workflow output shape, base64 input/auth headers, response sanitization, and invalid input rejection. They do not call Roboflow live. A live smoke test needs a deployed Worker, the `ROBOFLOW_API_KEY` secret, Firestore rules merged in the Firebase Console, a signed-in app user, and a photo.
-
-To run the live smoke test after deployment, set `NAVABLE_WORKER_URL` and `FIREBASE_ID_TOKEN` in your shell, then run `npm run smoke -- C:\path\to\sample.jpg` from `worker/`. It checks that the real Worker response includes image metadata and a detections array, and logs only the detection count.
-
-The map uses OpenStreetMap tiles through `flutter_map`; no Google Maps key is needed. Keep the visible OpenStreetMap attribution. The public tile server is best-effort and has a usage policy: https://operations.osmfoundation.org/policies/tiles/. Location permission is requested only when the user taps the location button.
+The map uses OpenStreetMap tiles through `flutter_map`; it does not need a Google Maps key. Keep OpenStreetMap attribution visible and follow the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/).

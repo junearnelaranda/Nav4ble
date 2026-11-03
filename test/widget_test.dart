@@ -18,9 +18,7 @@ void main() {
 
     expect(find.text('Continue as a Guest'), findsOneWidget);
     expect(
-      find.text(
-        'Search  →  View place  →  Check accessibility  →  Navigate',
-      ),
+      find.text('Search  →  View place  →  Check accessibility  →  Navigate'),
       findsOneWidget,
     );
 

@@ -1,4 +1,4 @@
-import { verifyFirebaseIdToken } from './firebase_auth.js';
+import { verifySupabaseAccessToken } from './supabase_auth.js';
 import { runWorkflowForImage, WorkflowError } from './workflow.js';
 
 const maxBodyBytes = 1024 * 1024;
@@ -38,14 +38,18 @@ export async function handleRequest(request, env, dependencies = {}) {
   if (!token) {
     return json(401, { error: { code: 'UNAUTHENTICATED', message: 'Sign in before running image analysis.' } }, headers);
   }
+  if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
+    return json(503, { error: { code: 'AUTH_NOT_CONFIGURED', message: 'Supabase authentication is not configured yet.' } }, headers);
+  }
   try {
-    await (dependencies.verifyToken || verifyFirebaseIdToken)(
+    await (dependencies.verifyToken || verifySupabaseAccessToken)(
       token,
-      env.FIREBASE_PROJECT_ID,
+      env.SUPABASE_URL,
+      env.SUPABASE_PUBLISHABLE_KEY,
       dependencies.fetchImpl || fetch,
     );
   } catch (_) {
-    return json(401, { error: { code: 'UNAUTHENTICATED', message: 'Firebase sign-in token is invalid or expired.' } }, headers);
+    return json(401, { error: { code: 'UNAUTHENTICATED', message: 'Supabase sign-in token is invalid or expired.' } }, headers);
   }
 
   const declaredLength = Number(request.headers.get('Content-Length') || 0);

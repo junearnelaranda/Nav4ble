@@ -47,159 +47,162 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFF7FFF8), Colors.white, Color(0xFFECFFF0)],
-            stops: [0, 0.52, 1],
+    return NavAbleLightTheme(
+      child: Scaffold(
+        body: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFF7FFF8), Colors.white, Color(0xFFECFFF0)],
+              stops: [0, 0.52, 1],
+            ),
           ),
-        ),
-        child: Stack(
-          children: [
-            const _SoftGlow(alignment: Alignment.topRight),
-            const _SoftGlow(alignment: Alignment.bottomLeft),
-            SafeArea(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 44, 24, 24),
-                        child: FadeTransition(
-                          opacity: _fadeAnimation,
-                          child: SlideTransition(
-                            position: _slideAnimation,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Image.asset(
-                                  'lib/img/logOnly.png',
-                                  width: 152,
-                                  fit: BoxFit.contain,
-                                ),
-                                const SizedBox(height: 48),
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 330,
+          child: Stack(
+            children: [
+              const _SoftGlow(alignment: Alignment.topRight),
+              const _SoftGlow(alignment: Alignment.bottomLeft),
+              SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 44, 24, 24),
+                          child: FadeTransition(
+                            opacity: _fadeAnimation,
+                            child: SlideTransition(
+                              position: _slideAnimation,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Image.asset(
+                                    'lib/img/logOnly.png',
+                                    width: 152,
+                                    fit: BoxFit.contain,
                                   ),
-                                  child: Text(
-                                    'Every Path Made Clear.\nEvery Destination Reached.',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: WelcomeScreen._navy,
-                                      fontSize: 29,
-                                      height: 1.18,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 0,
+                                  const SizedBox(height: 48),
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 330,
+                                    ),
+                                    child: Text(
+                                      'Every Path Made Clear.\nEvery Destination Reached.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: WelcomeScreen._navy,
+                                        fontSize: 29,
+                                        height: 1.18,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(height: 18),
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 322,
-                                  ),
-                                  child: Text(
-                                    "Finding accessible routes shouldn't be a challenge. NavAble provides real-time, peer-verified navigation for wheelchair users and those with limited mobility.",
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: WelcomeScreen._text,
-                                      fontSize: 15,
-                                      height: 1.68,
-                                      fontWeight: FontWeight.w400,
-                                      letterSpacing: 0,
+                                  const SizedBox(height: 18),
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 322,
+                                    ),
+                                    child: Text(
+                                      "Finding accessible routes shouldn't be a challenge. NavAble provides real-time, peer-verified navigation for wheelchair users and those with limited mobility.",
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: WelcomeScreen._text,
+                                        fontSize: 15,
+                                        height: 1.68,
+                                        fontWeight: FontWeight.w400,
+                                        letterSpacing: 0,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(height: 32),
-                                const _FeatureChips(),
-                                const SizedBox(height: 34),
-                                _PrimaryCtaButton(
-                                  onPressed: () {
-                                    Navigator.of(context).push(
-                                      PageRouteBuilder<void>(
-                                        transitionDuration: const Duration(
-                                          milliseconds: 360,
-                                        ),
-                                        reverseTransitionDuration:
-                                            const Duration(milliseconds: 260),
-                                        pageBuilder:
-                                            (
-                                              context,
-                                              animation,
-                                              secondaryAnimation,
-                                            ) => const LoginScreen(),
-                                        transitionsBuilder:
-                                            (
-                                              context,
-                                              animation,
-                                              secondaryAnimation,
-                                              child,
-                                            ) {
-                                              final curved = CurvedAnimation(
-                                                parent: animation,
-                                                curve: Curves.easeOutCubic,
-                                              );
+                                  const SizedBox(height: 32),
+                                  const _FeatureChips(),
+                                  const SizedBox(height: 34),
+                                  _PrimaryCtaButton(
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                        PageRouteBuilder<void>(
+                                          transitionDuration: const Duration(
+                                            milliseconds: 360,
+                                          ),
+                                          reverseTransitionDuration:
+                                              const Duration(milliseconds: 260),
+                                          pageBuilder:
+                                              (
+                                                context,
+                                                animation,
+                                                secondaryAnimation,
+                                              ) => const LoginScreen(),
+                                          transitionsBuilder:
+                                              (
+                                                context,
+                                                animation,
+                                                secondaryAnimation,
+                                                child,
+                                              ) {
+                                                final curved = CurvedAnimation(
+                                                  parent: animation,
+                                                  curve: Curves.easeOutCubic,
+                                                );
 
-                                              return FadeTransition(
-                                                opacity: curved,
-                                                child: SlideTransition(
-                                                  position: Tween<Offset>(
-                                                    begin: const Offset(
-                                                      0.04,
-                                                      0,
-                                                    ),
-                                                    end: Offset.zero,
-                                                  ).animate(curved),
-                                                  child: child,
-                                                ),
-                                              );
-                                            },
-                                      ),
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 24),
-                                Text.rich(
-                                  TextSpan(
-                                    text: 'By continuing, you agree to our ',
-                                    children: [
-                                      TextSpan(
-                                        text: 'Terms of Service',
-                                        style: TextStyle(
-                                          color: WelcomeScreen._navy,
-                                          decoration: TextDecoration.underline,
-                                          fontWeight: FontWeight.w800,
+                                                return FadeTransition(
+                                                  opacity: curved,
+                                                  child: SlideTransition(
+                                                    position: Tween<Offset>(
+                                                      begin: const Offset(
+                                                        0.04,
+                                                        0,
+                                                      ),
+                                                      end: Offset.zero,
+                                                    ).animate(curved),
+                                                    child: child,
+                                                  ),
+                                                );
+                                              },
                                         ),
-                                      ),
-                                    ],
+                                      );
+                                    },
                                   ),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Color(0xFF3F4650),
-                                    fontSize: 12,
-                                    height: 1.45,
-                                    fontWeight: FontWeight.w500,
-                                    letterSpacing: 0,
+                                  const SizedBox(height: 24),
+                                  Text.rich(
+                                    TextSpan(
+                                      text: 'By continuing, you agree to our ',
+                                      children: [
+                                        TextSpan(
+                                          text: 'Terms of Service',
+                                          style: TextStyle(
+                                            color: WelcomeScreen._navy,
+                                            decoration:
+                                                TextDecoration.underline,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Color(0xFF3F4650),
+                                      fontSize: 12,
+                                      height: 1.45,
+                                      fontWeight: FontWeight.w500,
+                                      letterSpacing: 0,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

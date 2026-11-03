@@ -4,7 +4,7 @@ compatibility_date = "2026-10-22"
 workers_dev = true
 
 [vars]
-FIREBASE_PROJECT_ID = "nav4ble-22f2d"
+# Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY with Wrangler vars before deployment.
 
 # This worker only handles image inference. It does not store uploaded images.
-# Firestore remains the private, Spark-plan image and report store.
+# Supabase Postgres and private Storage hold submitted reports and photos.
