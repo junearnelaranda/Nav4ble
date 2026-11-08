@@ -34,6 +34,8 @@ void main() {
       'Accessible entrance',
       'Wheelchair seating',
     ]);
+    // Google's explicit "no" is kept; null (not reported) is not a no.
+    expect(place.missingTags, ['Accessible restroom']);
     expect(place.photo, 'places/ChIJ123/photos/abc');
   });
 

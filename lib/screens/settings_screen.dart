@@ -2,15 +2,11 @@ part of '../home.dart';
 
 class _SettingsScreen extends StatefulWidget {
   const _SettingsScreen({
-    required this.voiceGuidance,
-    required this.onVoiceGuidanceChanged,
     required this.submissions,
     required this.reportCount,
     required this.onOpenInfo,
   });
 
-  final bool voiceGuidance;
-  final ValueChanged<bool> onVoiceGuidanceChanged;
   final List<AccessibilitySubmission> submissions;
   final int? reportCount;
   final void Function(String title, String body) onOpenInfo;
@@ -21,7 +17,6 @@ class _SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<_SettingsScreen> {
   late bool _darkMode;
-  late bool _voiceGuidance;
   late double _textScale;
   late String _language;
 
@@ -29,7 +24,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
   void initState() {
     super.initState();
     _darkMode = NavAblePreferences.themeMode.value == ThemeMode.dark;
-    _voiceGuidance = widget.voiceGuidance;
     _textScale = NavAblePreferences.textScale.value;
     _language = NavAblePreferences.language.value;
   }
@@ -208,8 +202,8 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                     ),
                     Slider(
                       value: _textScale,
-                      min: 0.8,
-                      max: 1.2,
+                      min: NavAblePreferences.minTextScale,
+                      max: NavAblePreferences.maxTextScale,
                       divisions: 8,
                       activeColor: NavAblePalette.greenDark,
                       label: '${(_textScale * 100).round()}%',
@@ -223,36 +217,20 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                       children: [
                         Text(
                           'Small',
-                          style: TextStyle(color: secondaryText, fontSize: 10),
+                          style: TextStyle(color: secondaryText, fontSize: 11),
                         ),
                         Text(
                           'Normal',
-                          style: TextStyle(color: secondaryText, fontSize: 10),
+                          style: TextStyle(color: secondaryText, fontSize: 11),
                         ),
                         Text(
                           'Large',
-                          style: TextStyle(color: secondaryText, fontSize: 10),
+                          style: TextStyle(color: secondaryText, fontSize: 11),
                         ),
                       ],
                     ),
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: NavAbleSpacing.xs),
-            _SettingsCard(
-              color: _surface(context),
-              child: _SettingsSwitchTile(
-                icon: Icons.record_voice_over_outlined,
-                iconBackground: const Color(0xFFDDF9E3),
-                iconForeground: NavAblePalette.greenDark,
-                title: 'Voice Navigation',
-                subtitle: 'Step-by-step audio cues',
-                value: _voiceGuidance,
-                onChanged: (value) {
-                  setState(() => _voiceGuidance = value);
-                  widget.onVoiceGuidanceChanged(value);
-                },
               ),
             ),
             const SizedBox(height: NavAbleSpacing.lg),
@@ -280,11 +258,14 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                     icon: Icons.privacy_tip_outlined,
                     iconBackground: Colors.transparent,
                     title: 'Privacy Policy',
-                    trailing: Icons.open_in_new_rounded,
-                    onTap: () => widget.onOpenInfo(
-                      'Privacy Policy',
-                      'This front-end prototype stores account, report, and saved-place data only in memory while the app is running.',
-                    ),
+                    onTap: () => LegalScreen.open(context, LegalDoc.privacy),
+                  ),
+                  const Divider(indent: 54),
+                  _SettingsNavigationTile(
+                    icon: Icons.gavel_rounded,
+                    iconBackground: Colors.transparent,
+                    title: 'Terms of Service',
+                    onTap: () => LegalScreen.open(context, LegalDoc.terms),
                   ),
                   const Divider(indent: 54),
                   _SettingsNavigationTile(
@@ -293,7 +274,9 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                     title: 'About NavAble',
                     onTap: () => widget.onOpenInfo(
                       'About NavAble',
-                      'NavAble is an accessibility-first navigation prototype designed to make every route clearer and more inclusive.',
+                      'NavAble helps people in Cebu find accessible places '
+                          'and routes. Accessibility information is shared by '
+                          'the community and checked by NavAble admins.',
                     ),
                   ),
                 ],
@@ -318,7 +301,7 @@ class _SettingsSectionLabel extends StatelessWidget {
       label,
       style: TextStyle(
         color: dark ? NavAblePalette.green : NavAblePalette.greenDark,
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: FontWeight.w900,
         letterSpacing: 1,
       ),
@@ -369,7 +352,6 @@ class _SettingsSwitchTile extends StatelessWidget {
   const _SettingsSwitchTile({
     required this.icon,
     required this.iconBackground,
-    this.iconForeground = kNavAbleNavy,
     required this.title,
     required this.subtitle,
     required this.value,
@@ -378,7 +360,6 @@ class _SettingsSwitchTile extends StatelessWidget {
 
   final IconData icon;
   final Color iconBackground;
-  final Color iconForeground;
   final String title;
   final String subtitle;
   final bool value;
@@ -393,7 +374,7 @@ class _SettingsSwitchTile extends StatelessWidget {
       secondary: _SettingsIcon(
         icon: icon,
         background: iconBackground,
-        foreground: iconForeground,
+        foreground: kNavAbleNavy,
       ),
       title: Text(
         title,
@@ -425,7 +406,6 @@ class _SettingsNavigationTile extends StatelessWidget {
     this.iconForeground = kNavAbleNavy,
     required this.title,
     this.subtitle,
-    this.trailing = Icons.chevron_right_rounded,
     required this.onTap,
   });
 
@@ -434,7 +414,6 @@ class _SettingsNavigationTile extends StatelessWidget {
   final Color iconForeground;
   final String title;
   final String? subtitle;
-  final IconData trailing;
   final VoidCallback onTap;
 
   @override
@@ -469,7 +448,7 @@ class _SettingsNavigationTile extends StatelessWidget {
               ),
             ),
       trailing: Icon(
-        trailing,
+        Icons.chevron_right_rounded,
         color: dark ? NavAblePalette.darkText : kNavAbleText,
         size: 19,
       ),

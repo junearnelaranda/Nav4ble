@@ -1,4 +1,4 @@
-package com.example.navable
+package navable.app
 
 import io.flutter.embedding.android.FlutterActivity
 

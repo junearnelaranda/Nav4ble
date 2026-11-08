@@ -21,11 +21,15 @@ class AccessibleLocation {
     this.rating,
     this.googlePlaceId,
     this.photoUrl,
+    this.category = '',
   });
 
   final String id;
   final String name;
   final String address;
+
+  /// What kind of place it is, as set in the admin app ("Shopping mall").
+  final String category;
   final double latitude;
   final double longitude;
   final List<String> features;
@@ -162,6 +166,7 @@ class LocationsApi {
           latitude: latitude,
           longitude: longitude,
           features: features,
+          category: _text(document['category'])?.trim() ?? '',
           rating:
               _number(document['rating']) ??
               // 0 is the database default, meaning "not rated yet".

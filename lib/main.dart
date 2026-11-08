@@ -7,6 +7,7 @@ import 'services/auth_service.dart';
 import 'home.dart';
 import 'navable_design.dart';
 import 'password_recovery.dart';
+import 'splash.dart';
 import 'welcome.dart';
 
 Future<void> main() async {
@@ -31,6 +32,7 @@ Future<void> main() async {
     return;
   }
   await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
+  await NavAblePreferences.load();
   runApp(MyApp(initialRecovery: initialRecovery));
 }
 
@@ -110,7 +112,8 @@ class _MyAppState extends State<MyApp> {
             );
           },
         ),
-        home: const AuthCheck(),
+        // The splash plays on every launch, signed in or not.
+        home: const SplashScreen(nextScreen: AuthCheck()),
       ),
     );
   }

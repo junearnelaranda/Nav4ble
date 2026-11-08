@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'home.dart';
+import 'services/auth_service.dart';
 
 class PasswordRecoveryScreen extends StatefulWidget {
   const PasswordRecoveryScreen({super.key});
@@ -25,8 +26,11 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
 
   Future<void> _save() async {
     if (_saving) return;
-    if (_password.text.length < 6) {
-      setState(() => _error = 'Use at least 6 characters.');
+    if (_password.text.length < AuthService.minPasswordLength) {
+      setState(
+        () => _error =
+            'Use at least ${AuthService.minPasswordLength} characters.',
+      );
       return;
     }
     if (_password.text != _confirmation.text) {

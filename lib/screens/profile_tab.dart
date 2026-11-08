@@ -8,11 +8,10 @@ class _ProfilePage extends StatelessWidget {
     required this.savedPlaceCount,
     required this.statsLoading,
     required this.submissions,
-    required this.voiceGuidance,
-    required this.onVoiceGuidanceChanged,
     required this.onEditProfile,
     required this.onOpenInfo,
     required this.onSignOut,
+    required this.pointsSection,
   });
 
   final NavAbleUser? user;
@@ -21,11 +20,12 @@ class _ProfilePage extends StatelessWidget {
   final int? savedPlaceCount;
   final bool statsLoading;
   final List<AccessibilitySubmission> submissions;
-  final bool voiceGuidance;
-  final ValueChanged<bool> onVoiceGuidanceChanged;
   final VoidCallback onEditProfile;
   final void Function(String title, String body) onOpenInfo;
   final VoidCallback onSignOut;
+
+  /// Level, points, history and the way to Top Contributors.
+  final Widget pointsSection;
 
   String get _displayName {
     final name = user?.fullName.trim() ?? '';
@@ -36,26 +36,12 @@ class _ProfilePage extends StatelessWidget {
     return 'NavAble Traveler';
   }
 
-  String get _initials {
-    final words = _displayName
-        .split(RegExp(r'\s+'))
-        .where((word) => word.isNotEmpty)
-        .toList();
-    if (words.isEmpty) return 'NA';
-    if (words.length == 1) {
-      return words.first
-          .substring(0, words.first.length.clamp(1, 2))
-          .toUpperCase();
-    }
-    return '${words.first[0]}${words.last[0]}'.toUpperCase();
-  }
+  String get _initials => initialsOf(_displayName, fallback: 'NA');
 
   void _openAccessibilitySettings(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => _SettingsScreen(
-          voiceGuidance: voiceGuidance,
-          onVoiceGuidanceChanged: onVoiceGuidanceChanged,
           submissions: submissions,
           reportCount: reportCount,
           onOpenInfo: onOpenInfo,
@@ -177,16 +163,6 @@ class _ProfilePage extends StatelessWidget {
                   letterSpacing: -0.2,
                 ),
               ),
-              const SizedBox(height: NavAbleSpacing.xxs),
-              Text(
-                'NavAble Gold Member • Verified Contributor',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: context.navAbleSecondaryText,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
               if (user?.email.isNotEmpty ?? false) ...[
                 const SizedBox(height: NavAbleSpacing.xxs),
                 Text(
@@ -202,56 +178,7 @@ class _ProfilePage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: NavAbleSpacing.xl),
-        NavAbleSurface(
-          width: double.infinity,
-          padding: const EdgeInsets.all(NavAbleSpacing.md),
-          borderRadius: NavAbleRadius.control,
-          enableHover: true,
-          onTap: () => onOpenInfo(
-            'Accessibility Contributions',
-            'Your verified reports, route confirmations, and accessibility updates help other NavAble travelers move with confidence.',
-          ),
-          child: Row(
-            children: [
-              _ProfileMetricIcon(
-                icon: Icons.workspace_premium_rounded,
-                foreground: Colors.white,
-                background: NavAblePalette.navy,
-              ),
-              const SizedBox(width: NavAbleSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'ACCESSIBILITY CONTRIBUTIONS',
-                      style: TextStyle(
-                        color: context.navAbleSecondaryText,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.7,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      contributionPoints?.toString() ??
-                          (statsLoading ? '...' : '--'),
-                      style: TextStyle(
-                        color: context.navAblePrimaryText,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: context.navAbleSecondaryText,
-              ),
-            ],
-          ),
-        ),
+        pointsSection,
         const SizedBox(height: NavAbleSpacing.sm),
         Row(
           children: [

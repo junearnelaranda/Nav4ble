@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'services/auth_service.dart';
 import 'home.dart';
+import 'legal.dart';
 import 'login.dart';
 import 'navable_design.dart';
 import 'splash.dart';
@@ -257,8 +258,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                                           AutofillHints.newPassword,
                                         ],
                                         validator: (value) {
-                                          if ((value ?? '').length < 8) {
-                                            return 'Use at least 8 characters.';
+                                          if ((value ?? '').length <
+                                              AuthService.minPasswordLength) {
+                                            return 'Use at least ${AuthService.minPasswordLength} characters.';
                                           }
                                           return null;
                                         },
@@ -700,25 +702,21 @@ class _TermsAgreement extends StatelessWidget {
                     child: Text.rich(
                       TextSpan(
                         text: 'I agree to the ',
-                        children: const [
-                          TextSpan(
-                            text: 'Terms of Service',
-                            style: TextStyle(
-                              color: kNavAbleGreen,
-                              decoration: TextDecoration.underline,
-                              fontWeight: FontWeight.w800,
-                            ),
+                        children: [
+                          legalLink(
+                            context,
+                            'Terms of Service',
+                            LegalDoc.terms,
+                            _legalLinkStyle,
                           ),
-                          TextSpan(text: ' and '),
-                          TextSpan(
-                            text: 'Privacy Policy',
-                            style: TextStyle(
-                              color: kNavAbleGreen,
-                              decoration: TextDecoration.underline,
-                              fontWeight: FontWeight.w800,
-                            ),
+                          const TextSpan(text: ' and '),
+                          legalLink(
+                            context,
+                            'Privacy Policy',
+                            LegalDoc.privacy,
+                            _legalLinkStyle,
                           ),
-                          TextSpan(text: '.'),
+                          const TextSpan(text: '.'),
                         ],
                       ),
                       style: TextStyle(
@@ -933,3 +931,11 @@ class _HelpNotice extends StatelessWidget {
     );
   }
 }
+
+const _legalLinkStyle = TextStyle(
+  color: kNavAbleGreen,
+  decoration: TextDecoration.underline,
+  fontWeight: FontWeight.w800,
+  fontSize: 12,
+  height: 1.45,
+);

@@ -168,7 +168,14 @@ class _OpenStreetMapView extends StatefulWidget {
     this.selectedLocationId,
     this.onAccessibleLocationTapped,
     this.borderRadius = BorderRadius.zero,
+    this.isConfirmed,
+    this.isResultConfirmed,
   });
+
+  /// Green pin when true, red ("not confirmed") otherwise. Defaults to
+  /// "has any accessibility info"; Home passes its filter result instead.
+  final bool Function(AccessibleLocation location)? isConfirmed;
+  final bool Function(PlaceSearchResult result)? isResultConfirmed;
 
   final osm.LatLng initialPosition;
   final bool showLocationButton;
@@ -358,7 +365,7 @@ class _OpenStreetMapViewState extends State<_OpenStreetMapView> {
             children: [
               fm.TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.navable',
+                userAgentPackageName: 'navable.app',
                 tileBuilder: isDark ? _navAbleDarkTileBuilder : null,
               ),
               if (widget.route case final route?)
@@ -417,9 +424,11 @@ class _OpenStreetMapViewState extends State<_OpenStreetMapView> {
                                 ? const _PushPin()
                                 : _PushPin(
                                     // Red until it has accessibility features.
-                                    color: location.features.isEmpty
-                                        ? _pushPinRed
-                                        : pinColor,
+                                    color:
+                                        (widget.isConfirmed?.call(location) ??
+                                            location.features.isNotEmpty)
+                                        ? pinColor
+                                        : _pushPinRed,
                                     scale: _PushPin.small,
                                   ),
                           ),
@@ -453,7 +462,9 @@ class _OpenStreetMapViewState extends State<_OpenStreetMapView> {
                                 ? '${result.name}: ${result.accessibility}'
                                 : '${result.name}: no accessibility info yet',
                             child: _PushPin(
-                              color: result.isAccessible
+                              color:
+                                  (widget.isResultConfirmed?.call(result) ??
+                                      result.isAccessible)
                                   ? pinColor
                                   : _pushPinRed,
                               scale: _PushPin.small,

@@ -1,6 +1,6 @@
 {
-    "name": "navable",
-    "short_name": "navable",
+    "name": "NavAble",
+    "short_name": "NavAble",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

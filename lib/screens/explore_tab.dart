@@ -50,15 +50,42 @@ const _exploreFilters = <(String, IconData, List<String>)>[
   ('Wheelchair Seating', Icons.event_seat_outlined, ['seating']),
 ];
 
-/// Filters only hide places known not to fit: a place with no accessibility
-/// info yet (e.g. Google-only) still shows, listed after the matches.
-bool _matchesFilters(Iterable<String> tags, Set<String> selected) {
-  if (selected.isEmpty || tags.isEmpty) return true;
-  final lower = tags.map((t) => t.toLowerCase()).toList();
-  return _exploreFilters
-      .where((f) => selected.contains(f.$1))
-      .every((f) => f.$3.any((word) => lower.any((t) => t.contains(word))));
+/// How a place fares against the selected chips: yes, no or unknown per
+/// chip (see [filterMatch]). Only an explicit "no" hides a place; Google, for
+/// example, never reports elevators, ramps, braille or audio.
+FilterMatch _exploreMatch(
+  Iterable<String> has,
+  Iterable<String> lacks,
+  Set<String> selected,
+) => filterMatch(
+  has: has,
+  lacks: lacks,
+  selected: [
+    for (final filter in _exploreFilters)
+      if (selected.contains(filter.$1)) filter.$3,
+  ],
+);
+
+/// Confirmed matches first, then places not confirmed either way; places
+/// confirmed to lack a chosen feature are left out. The bool is "confirmed".
+List<(T, bool)> _byFilterMatch<T>(
+  List<T> sorted,
+  FilterMatch Function(T item) match,
+) {
+  final results = {for (final item in sorted) item: match(item)};
+  return [
+    for (final item in sorted)
+      if (results[item] == FilterMatch.matches) (item, true),
+    for (final item in sorted)
+      if (results[item] == FilterMatch.unknown) (item, false),
+  ];
 }
+
+/// The last Google search. Explore is rebuilt each time its tab opens, but the
+/// search box keeps its text, so this brings the results back with it instead
+/// of an empty list (and without paying for the same search again).
+({String query, List<GooglePlace> results, osm.LatLng origin})?
+_lastExploreSearch;
 
 class _ExplorePageState extends State<_ExplorePage> {
   final Set<String> _selectedFilters = {};
@@ -75,6 +102,17 @@ class _ExplorePageState extends State<_ExplorePage> {
   void initState() {
     super.initState();
     _query = widget.searchController.text;
+    final query = _query.trim();
+    final last = _lastExploreSearch;
+    if (query.isNotEmpty && last != null && last.query == query) {
+      _googleResults = last.results;
+      _origin = last.origin;
+    } else if (query.isNotEmpty) {
+      // Text left in the box with no results to show: search it again.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _runSearch();
+      });
+    }
     _loadOrigin();
   }
 
@@ -141,19 +179,29 @@ class _ExplorePageState extends State<_ExplorePage> {
         latitude: center.latitude,
         longitude: center.longitude,
       );
+      _lastExploreSearch = (query: query, results: results, origin: center);
       if (!mounted) return;
       setState(() {
         _origin = center;
         _googleResults = results;
       });
     } on PlacesApiException catch (error) {
+      _lastExploreSearch = null;
       if (!mounted) return;
       // Fall back to searching NavAble's own places.
       setState(() {
         _googleResults = null;
         _searchError = error.notConfigured
-            ? 'Google search isn\'t set up yet, so these are NavAble places only.'
+            ? 'Place search isn\'t set up yet, so these are NavAble places only.'
             : '${error.message} Showing NavAble places only.';
+      });
+    } catch (_) {
+      // Anything unexpected still gets a message instead of failing silently.
+      if (!mounted) return;
+      setState(() {
+        _googleResults = null;
+        _searchError =
+            'Place search is unavailable right now. Showing NavAble places only.';
       });
     } finally {
       if (mounted) setState(() => _searching = false);
@@ -173,16 +221,9 @@ class _ExplorePageState extends State<_ExplorePage> {
     );
   }
 
-  List<GooglePlace> _visibleGoogle(List<GooglePlace> results) {
+  List<(GooglePlace, bool)> _visibleGoogle(List<GooglePlace> results) {
     final linked = _linkedPlaces;
-    final places = results
-        .where(
-          (p) => _matchesFilters([
-            ...?linked[p.id]?.features,
-            ...p.accessibilityTags,
-          ], _selectedFilters),
-        )
-        .toList();
+    final places = [...results];
     switch (_sortMode) {
       case 'Distance':
         places.sort(
@@ -196,25 +237,30 @@ class _ExplorePageState extends State<_ExplorePage> {
             (linked[p.id]?.rating ?? -1) * 10 + (p.rating ?? 0);
         places.sort((a, b) => score(b).compareTo(score(a)));
     }
-    if (_selectedFilters.isEmpty) return places;
-    bool hasInfo(GooglePlace p) =>
-        (linked[p.id]?.features.isNotEmpty ?? false) ||
-        p.accessibilityTags.isNotEmpty;
-    return [...places.where(hasInfo), ...places.where((p) => !hasInfo(p))];
+    if (_selectedFilters.isEmpty) return [for (final p in places) (p, true)];
+    return _byFilterMatch(
+      places,
+      (p) => _exploreMatch(
+        [...?linked[p.id]?.features, ...p.accessibilityTags],
+        p.missingTags,
+        _selectedFilters,
+      ),
+    );
   }
 
-  List<AccessibleLocation> get _visiblePlaces {
-    final normalizedQuery = _query.trim().toLowerCase();
-    final places = widget.locations.where((place) {
-      final matchesQuery =
-          normalizedQuery.isEmpty ||
-          place.name.toLowerCase().contains(normalizedQuery) ||
-          place.address.toLowerCase().contains(normalizedQuery) ||
-          place.features.any(
-            (feature) => feature.toLowerCase().contains(normalizedQuery),
-          );
-      return matchesQuery && _matchesFilters(place.features, _selectedFilters);
-    }).toList();
+  List<(AccessibleLocation, bool)> get _visiblePlaces {
+    // Name, address, category ("Shopping mall") and features, word by word.
+    final places = widget.locations
+        .where(
+          (place) => placeMatchesQuery(
+            _query,
+            name: place.name,
+            address: place.address,
+            category: place.category,
+            features: place.features,
+          ),
+        )
+        .toList();
 
     switch (_sortMode) {
       case 'Name':
@@ -222,11 +268,11 @@ class _ExplorePageState extends State<_ExplorePage> {
       default:
         places.sort((a, b) => (b.rating ?? 0).compareTo(a.rating ?? 0));
     }
-    if (_selectedFilters.isEmpty) return places;
-    return [
-      ...places.where((p) => p.features.isNotEmpty),
-      ...places.where((p) => p.features.isEmpty),
-    ];
+    if (_selectedFilters.isEmpty) return [for (final p in places) (p, true)];
+    return _byFilterMatch(
+      places,
+      (p) => _exploreMatch(p.features, const [], _selectedFilters),
+    );
   }
 
   @override
@@ -235,7 +281,7 @@ class _ExplorePageState extends State<_ExplorePage> {
     final googlePlaces = google == null ? null : _visibleGoogle(google);
     final places = google == null
         ? _visiblePlaces
-        : const <AccessibleLocation>[];
+        : const <(AccessibleLocation, bool)>[];
     final count = googlePlaces?.length ?? places.length;
     final sortModes = google == null
         ? const ['Rating', 'Name']
@@ -260,8 +306,8 @@ class _ExplorePageState extends State<_ExplorePage> {
   Widget _exploreList(
     BuildContext context,
     List<GooglePlace>? google,
-    List<GooglePlace>? googlePlaces,
-    List<AccessibleLocation> places,
+    List<(GooglePlace, bool)>? googlePlaces,
+    List<(AccessibleLocation, bool)> places,
     int count,
     List<String> sortModes,
     Map<String, AccessibleLocation> linked,
@@ -279,6 +325,7 @@ class _ExplorePageState extends State<_ExplorePage> {
             if (value.trim().isEmpty) {
               _googleResults = null;
               _searchError = null;
+              _lastExploreSearch = null;
             }
           }),
           onSubmitted: _runSearch,
@@ -331,9 +378,11 @@ class _ExplorePageState extends State<_ExplorePage> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    google == null
+                    google != null
+                        ? 'Accessibility by NavAble'
+                        : _query.trim().isEmpty
                         ? 'Verified NavAble places. Search to find more.'
-                        : 'Places by Google · accessibility by NavAble',
+                        : 'Press search to find more places.',
                     style: TextStyle(
                       color: context.navAbleSecondaryText,
                       fontSize: 11,
@@ -379,9 +428,10 @@ class _ExplorePageState extends State<_ExplorePage> {
               title: 'No places match',
               detail: 'Try another search or remove a filter.',
             ),
-          for (final place in googlePlaces) ...[
+          for (final (place, confirmed) in googlePlaces) ...[
             _GooglePlaceCard(
               place: place,
+              unconfirmed: !confirmed,
               linked: linked[place.id],
               distanceKm: _distanceKm(place),
               onTap: () => Navigator.of(context).push(
@@ -410,23 +460,40 @@ class _ExplorePageState extends State<_ExplorePage> {
             detail: widget.locationsError!,
           )
         else if (places.isEmpty)
-          const _EmptyState(
-            icon: Icons.travel_explore_rounded,
-            title: 'Search for a place',
-            detail:
-                'Search any place by name or type, like a mall, café, '
-                'hospital or terminal, to see its accessibility.',
-          )
-        else
-          for (final place in places) ...[
+          _query.trim().isEmpty
+              ? const _EmptyState(
+                  icon: Icons.travel_explore_rounded,
+                  title: 'Search for a place',
+                  detail:
+                      'Search any place by name or type, like a mall, café, '
+                      'hospital or terminal, to see its accessibility.',
+                )
+              // Typed but not searched yet: offer the full search.
+              : _EmptyState(
+                  icon: Icons.travel_explore_rounded,
+                  title: 'No NavAble places match yet',
+                  detail: 'Search all places to see more results.',
+                  actionLabel: 'Search all places for "${_query.trim()}"',
+                  onAction: _searching ? null : _runSearch,
+                )
+        else ...[
+          for (final (place, confirmed) in places) ...[
             _ExplorePlaceCard(
               place: place,
+              unconfirmed: !confirmed,
               distanceKm: _distanceToPlace(place),
               onNavigate: widget.onNavigate,
               onSubmitPhoto: widget.onSubmitPhoto,
             ),
             const SizedBox(height: 12),
           ],
+          if (_query.trim().isNotEmpty)
+            OutlinedButton.icon(
+              onPressed: _searching ? null : _runSearch,
+              icon: const Icon(Icons.search_rounded),
+              label: Text('Search all places for "${_query.trim()}"'),
+            ),
+        ],
       ],
     );
   }
@@ -556,7 +623,7 @@ class _GooglePhoto extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                 child: Text(
                   'Photo: ${place.photoAttribution}',
-                  style: const TextStyle(color: Colors.white, fontSize: 9),
+                  style: const TextStyle(color: Colors.white, fontSize: 11),
                 ),
               ),
             ),
@@ -576,12 +643,16 @@ class _GooglePlaceCard extends StatelessWidget {
     required this.linked,
     required this.distanceKm,
     required this.onTap,
+    this.unconfirmed = false,
   });
 
   final GooglePlace place;
   final AccessibleLocation? linked;
   final double? distanceKm;
   final VoidCallback onTap;
+
+  /// Shown below confirmed matches: no data says yes or no for a chosen chip.
+  final bool unconfirmed;
 
   @override
   Widget build(BuildContext context) {
@@ -657,6 +728,7 @@ class _GooglePlaceCard extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (unconfirmed) const _NotConfirmedNote(),
                   // Like the design: Google's own rating and hours stay on
                   // the details page.
                   if (tags.isNotEmpty) ...[
@@ -883,16 +955,21 @@ class _ExplorePlaceCard extends StatelessWidget {
     required this.distanceKm,
     required this.onNavigate,
     required this.onSubmitPhoto,
+    this.unconfirmed = false,
   });
 
   final AccessibleLocation place;
   final double? distanceKm;
+
+  /// Shown below confirmed matches: no data says yes or no for a chosen chip.
+  final bool unconfirmed;
   final ValueChanged<AccessibleLocation> onNavigate;
   final ValueChanged<AccessibleLocation> onSubmitPhoto;
 
   @override
   Widget build(BuildContext context) {
     final subtitle = [
+      if (place.category.isNotEmpty) place.category,
       if (distanceKm != null) _formatDistance(distanceKm!),
       ?_readableAddress(place.address),
     ].join(' • ');
@@ -968,6 +1045,7 @@ class _ExplorePlaceCard extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (unconfirmed) const _NotConfirmedNote(),
                   const SizedBox(height: 10),
                   if (place.features.isEmpty)
                     Text(
@@ -1088,6 +1166,16 @@ class _ExplorePlaceDetails extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
+                  if (place.category.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      place.category,
+                      style: TextStyle(
+                        color: context.navAblePrimaryText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                   if (_readableAddress(place.address) case final address?) ...[
                     const SizedBox(height: 4),
                     Text(
@@ -1186,6 +1274,37 @@ class _ExploreTag extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// "Not confirmed yet" under a place no data confirms for the chosen chips.
+class _NotConfirmedNote extends StatelessWidget {
+  const _NotConfirmedNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(
+            Icons.help_outline_rounded,
+            size: 15,
+            color: context.navAbleSecondaryText,
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              'Not confirmed yet for your filters',
+              style: TextStyle(
+                color: context.navAbleSecondaryText,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

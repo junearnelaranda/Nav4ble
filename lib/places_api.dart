@@ -5,12 +5,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'locations_api.dart';
 
 class PlacesApiException implements Exception {
-  const PlacesApiException(this.message, {this.notConfigured = false});
+  const PlacesApiException(
+    this.message, {
+    this.notConfigured = false,
+    this.signInNeeded = false,
+  });
 
   final String message;
 
   /// The Google key hasn't been added to Supabase yet.
   final bool notConfigured;
+
+  /// Google search is for signed-in users (each search is billed).
+  final bool signInNeeded;
 
   @override
   String toString() => message;
@@ -31,20 +38,25 @@ class GooglePlace {
     this.type,
     this.openNow,
     this.accessibilityTags = const [],
+    this.missingTags = const [],
     this.photo,
     this.photoAttribution,
   });
 
   factory GooglePlace.fromJson(Map<String, dynamic> json) {
     final access = json['accessibility'];
-    final tags = <String>[
-      if (access is Map) ...[
-        if (access['wheelchairEntrance'] == true) 'Accessible entrance',
-        if (access['wheelchairRestroom'] == true) 'Accessible restroom',
-        if (access['wheelchairParking'] == true) 'Accessible parking',
-        if (access['wheelchairSeating'] == true) 'Wheelchair seating',
-      ],
+    const labels = {
+      'wheelchairEntrance': 'Accessible entrance',
+      'wheelchairRestroom': 'Accessible restroom',
+      'wheelchairParking': 'Accessible parking',
+      'wheelchairSeating': 'Wheelchair seating',
+    };
+    List<String> where(bool value) => [
+      if (access is Map)
+        for (final MapEntry(:key, value: label) in labels.entries)
+          if (access[key] == value) label,
     ];
+    final tags = where(true);
     double? number(Object? v) => v is num ? v.toDouble() : null;
     return GooglePlace(
       id: json['id'] as String,
@@ -58,6 +70,7 @@ class GooglePlace {
       type: json['type'] as String?,
       openNow: json['openNow'] as bool?,
       accessibilityTags: tags,
+      missingTags: where(false),
       photo: json['photo'] as String?,
       photoAttribution: json['photoAttribution'] as String?,
     );
@@ -78,6 +91,10 @@ class GooglePlace {
 
   /// Wheelchair facts Google knows, for places NavAble hasn't rated yet.
   final List<String> accessibilityTags;
+
+  /// Features Google says this place lacks (an explicit "no"; features Google
+  /// doesn't report aren't listed).
+  final List<String> missingTags;
 
   /// Google photo name; load it with [PlacesApi.photoUrl].
   final String? photo;
@@ -115,10 +132,15 @@ abstract final class PlacesApi {
           ? details['error']['code']
           : null;
       throw PlacesApiException(
-        code == 'PLACES_NOT_CONFIGURED'
-            ? 'Google place search is not set up yet.'
-            : 'Place search is unavailable right now.',
+        switch (code) {
+          'PLACES_NOT_CONFIGURED' => 'Place search is not set up yet.',
+          'UNAUTHENTICATED' => 'Sign in to search all places.',
+          // The search function caps searches per person and per day.
+          'DAILY_LIMIT' => "Place search has reached today's limit.",
+          _ => 'Place search is unavailable right now.',
+        },
         notConfigured: code == 'PLACES_NOT_CONFIGURED',
+        signInNeeded: code == 'UNAUTHENTICATED',
       );
     } on Exception {
       throw const PlacesApiException('Could not reach place search.');
@@ -139,7 +161,14 @@ abstract final class PlacesApi {
     '$_supabaseUrl/functions/v1/$_function',
   ).replace(queryParameters: {'photo': photo, 'w': '$width'}).toString();
 
-  static Map<String, String> get photoHeaders => {'apikey': _supabaseKey};
+  /// Photo requests also need the signed-in user's token.
+  static Map<String, String> get photoHeaders {
+    final token = Supabase.instance.client.auth.currentSession?.accessToken;
+    return {
+      'apikey': _supabaseKey,
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
 
   /// Straight-line distance in kilometres.
   static double distanceKm(double lat1, double lng1, double lat2, double lng2) {

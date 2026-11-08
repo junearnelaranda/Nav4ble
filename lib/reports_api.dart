@@ -63,7 +63,97 @@ class PhotoAnalysis {
       .toList(growable: false);
 }
 
+/// Where a report stands with the admins (`reports.status`).
+enum ReportStatus {
+  pending('Waiting for review'),
+  verified('Verified'),
+  resolved('Resolved'),
+  rejected('Not approved');
+
+  const ReportStatus(this.label);
+
+  final String label;
+
+  static ReportStatus from(String? value) => switch (value) {
+    'Verified' => verified,
+    'Resolved' => resolved,
+    'Rejected' => rejected,
+    _ => pending,
+  };
+}
+
+/// One of the signed-in user's reports, as stored (so it survives restarts
+/// and shows the admins' latest decision).
+class MyReport {
+  const MyReport({
+    required this.id,
+    required this.title,
+    required this.detail,
+    required this.category,
+    required this.placeName,
+    required this.status,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String title;
+  final String detail;
+  final String category;
+  final String placeName;
+  final ReportStatus status;
+  final DateTime createdAt;
+
+  /// Reads a `reports` row. Descriptions written by the app look like
+  /// "[Category] Title: details" (see [ReportsApi.reportDescription]).
+  static MyReport? fromRow(Map<String, dynamic> row) {
+    final id = row['report_id'];
+    final created = DateTime.tryParse(row['created_at']?.toString() ?? '');
+    if (id is! String || created == null) return null;
+    final text = (row['description'] as String? ?? '').trim();
+    final parts = RegExp(
+      r'^\[([^\]]+)\]\s*([^:]+?):\s*(.*)$',
+      dotAll: true,
+    ).firstMatch(text);
+    final location = row['locations'];
+    final place = location is Map ? location['location_name'] : null;
+    return MyReport(
+      id: id,
+      title: parts?.group(2)?.trim() ?? text,
+      detail: parts?.group(3)?.trim() ?? '',
+      category:
+          parts?.group(1)?.trim() ??
+          (row['report_type'] as String? ?? 'Others'),
+      placeName: place is String && place.trim().isNotEmpty
+          ? place.trim()
+          : 'a place',
+      status: ReportStatus.from(row['status'] as String?),
+      createdAt: created.toLocal(),
+    );
+  }
+}
+
 class ReportsApi {
+  /// The signed-in user's reports, newest first.
+  static Future<List<MyReport>> myReports() async {
+    final client = Supabase.instance.client;
+    final me = client.auth.currentUser?.id;
+    if (me == null) return const [];
+    try {
+      final rows = await client
+          .from('reports')
+          .select(
+            'report_id, report_type, description, status, created_at, '
+            'locations(location_name)',
+          )
+          .eq('user_id', me)
+          .order('created_at', ascending: false)
+          .limit(100);
+      return [for (final row in rows) ?MyReport.fromRow(row)];
+    } on PostgrestException {
+      throw const ReportsApiException('Could not load your reports.');
+    }
+  }
+
   ReportsApi._();
 
   /// Optional Cloudflare Worker. When unset, photos are analyzed by the

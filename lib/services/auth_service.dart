@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'profile_picture.dart';
+
 class AuthResult {
   const AuthResult({
     required this.isSuccess,
@@ -30,7 +32,9 @@ class AuthService {
   final SupabaseClient supabase = Supabase.instance.client;
 
   GoTrueClient get _auth => supabase.auth;
+  // The signed-in user's profile picture, loaded once from their profile.
   static Uint8List? _profileImageBytes;
+  static String? _profileImageOwner;
 
   // SIGN UP
   Future<AuthResponse> signUp({
@@ -61,6 +65,28 @@ class AuthService {
   Future<void> logout() async {
     await supabase.auth.signOut();
     _profileImageBytes = null;
+    _profileImageOwner = null;
+  }
+
+  /// Loads the saved profile picture (`user_profiles.profile_picture`).
+  /// Returns true when it changed what the app should show.
+  Future<bool> loadProfilePicture() async {
+    final user = _auth.currentUser;
+    if (user == null || _profileImageOwner == user.id) return false;
+    try {
+      final row = await supabase
+          .from('user_profiles')
+          .select('profile_picture')
+          .eq('user_id', user.id)
+          .maybeSingle();
+      _profileImageBytes = ProfilePicture.decode(
+        row?['profile_picture'] as String?,
+      );
+      _profileImageOwner = user.id;
+      return true;
+    } catch (_) {
+      return false; // Offline: initials for now, try again next start.
+    }
   }
 
   // GET CURRENT USER
@@ -86,9 +112,15 @@ class AuthService {
           ? legacyName
           : user.email?.split('@').first ?? 'NavAble user',
       email: user.email ?? '',
-      profileImageBytes: _profileImageBytes,
+      // Never show a picture that belongs to a previous account.
+      profileImageBytes: _profileImageOwner == user.id
+          ? _profileImageBytes
+          : null,
     );
   }
+
+  /// Same rule for creating an account and for resetting a password.
+  static const minPasswordLength = 8;
 
   static bool isValidEmail(String email) =>
       RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email.trim());
@@ -162,10 +194,32 @@ class AuthService {
           },
         ),
       );
-      _profileImageBytes = profileImageBytes;
+      if (!identical(profileImageBytes, currentUser?.profileImageBytes)) {
+        // A new photo, or the photo was removed (null).
+        final stored = profileImageBytes == null
+            ? null
+            : await ProfilePicture.encode(profileImageBytes);
+        if (profileImageBytes != null && stored == null) {
+          return const AuthResult(
+            isSuccess: false,
+            message: 'That photo could not be used. Try another one.',
+          );
+        }
+        await supabase
+            .from('user_profiles')
+            .update({'profile_picture': stored})
+            .eq('user_id', user.id);
+        _profileImageBytes = ProfilePicture.decode(stored);
+        _profileImageOwner = user.id;
+      }
       return const AuthResult(isSuccess: true);
     } on AuthException catch (error) {
       return AuthResult(isSuccess: false, message: messageFor(error));
+    } on PostgrestException {
+      return const AuthResult(
+        isSuccess: false,
+        message: 'Your name was saved, but the photo could not be. Try again.',
+      );
     }
   }
 

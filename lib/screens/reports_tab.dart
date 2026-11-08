@@ -13,21 +13,20 @@ class _ReportsPage extends StatefulWidget {
     required this.onPhotoCaptureRequestHandled,
     required this.onAnalyzePhotos,
     required this.onSubmitReport,
-    required this.onOpenReport,
     required this.onBackToHome,
     required this.onOpenContributions,
     this.initialKind,
     this.initialGooglePlace,
   });
 
-  final List<AccessReport> reports;
+  /// The user's stored reports, newest first.
+  final List<MyReport> reports;
   final List<AccessibleLocation> locations;
   final AccessibleLocation? initialLocation;
   final int photoCaptureRequestId;
   final VoidCallback onPhotoCaptureRequestHandled;
   final Future<PhotoAnalysis> Function(List<Uint8List>) onAnalyzePhotos;
   final Future<bool> Function(AccessReport, PhotoAnalysis) onSubmitReport;
-  final ValueChanged<AccessReport> onOpenReport;
   final VoidCallback onBackToHome;
   final VoidCallback onOpenContributions;
 
@@ -181,17 +180,31 @@ class _ReportsPageState extends State<_ReportsPage> {
       _photoAnalysis = null;
     });
     try {
-      final result = await widget.onAnalyzePhotos(
-        List<Uint8List>.unmodifiable(_selectedPhotos),
+      final photos = List<Uint8List>.unmodifiable(_selectedPhotos);
+      // Started once here: route builders can run more than once.
+      final analysis = widget.onAnalyzePhotos(photos);
+      // The scanning animation runs while the AI works, then turns into
+      // the result screen.
+      final outcome = await Navigator.of(context).push<_ScanOutcome>(
+        MaterialPageRoute(
+          builder: (context) => _AiScanningScreen(
+            photos: photos,
+            analysis: analysis,
+            resultScreen: (analysis) =>
+                _DetectionResultScreen(photos: photos, analysis: analysis),
+          ),
+        ),
       );
-      if (!mounted) return;
+      if (!mounted || outcome == null) return; // cancelled during the scan
+      if (outcome.error case final error?) throw error;
+      final result = outcome.analysis!;
       setState(() => _photoAnalysis = result);
       if (result.message != null) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(result.message!)));
       }
-      await _reviewDetections(result);
+      await _handleDetectionAction(await outcome.action);
     } on ReportsApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -221,15 +234,7 @@ class _ReportsPageState extends State<_ReportsPage> {
     }
   }
 
-  Future<void> _reviewDetections(PhotoAnalysis analysis) async {
-    final action = await Navigator.of(context).push<_DetectionAction>(
-      MaterialPageRoute(
-        builder: (context) => _DetectionResultScreen(
-          photos: List<Uint8List>.unmodifiable(_selectedPhotos),
-          analysis: analysis,
-        ),
-      ),
-    );
+  Future<void> _handleDetectionAction(_DetectionAction? action) async {
     if (!mounted) return;
     switch (action) {
       case _DetectionAction.submit:
@@ -348,13 +353,15 @@ class _ReportsPageState extends State<_ReportsPage> {
       ),
     ),
     const SizedBox(height: NavAbleSpacing.sm),
-    for (final report in widget.reports)
+    if (widget.reports.isEmpty)
+      Text(
+        'Your reports will appear here with their review status.',
+        style: TextStyle(color: context.navAbleSecondaryText),
+      ),
+    for (final report in widget.reports.take(5))
       Padding(
         padding: const EdgeInsets.only(bottom: NavAbleSpacing.sm),
-        child: _ReportCard(
-          report: report,
-          onTap: () => widget.onOpenReport(report),
-        ),
+        child: _MyReportCard(report: report, onTap: widget.onOpenContributions),
       ),
   ];
 
@@ -1280,5 +1287,74 @@ class _DashedBorderPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) {
     return oldDelegate.color != color || oldDelegate.radius != radius;
+  }
+}
+
+/// One stored report: title, place, date and the admins' latest decision.
+class _MyReportCard extends StatelessWidget {
+  const _MyReportCard({required this.report, required this.onTap});
+
+  final MyReport report;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = report.status;
+    final statusColor = switch (status) {
+      ReportStatus.pending => context.navAbleSecondaryText,
+      ReportStatus.verified || ReportStatus.resolved => NavAblePalette.green,
+      ReportStatus.rejected => const Color(0xFFE5484D),
+    };
+    return NavAbleSurface(
+      width: double.infinity,
+      padding: const EdgeInsets.all(NavAbleSpacing.md),
+      borderRadius: NavAbleRadius.control,
+      enableHover: true,
+      onTap: onTap,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(_reportStatusIcon(status), color: statusColor, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  report.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.navAblePrimaryText,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${report.category} · ${report.placeName} · '
+                  '${_shortDate(report.createdAt)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.navAbleSecondaryText,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  status.label,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

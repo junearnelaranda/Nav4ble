@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'legal.dart';
 import 'login.dart';
 import 'navable_design.dart';
 
@@ -171,15 +172,34 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                     TextSpan(
                                       text: 'By continuing, you agree to our ',
                                       children: [
-                                        TextSpan(
-                                          text: 'Terms of Service',
-                                          style: TextStyle(
-                                            color: WelcomeScreen._navy,
-                                            decoration:
-                                                TextDecoration.underline,
-                                            fontWeight: FontWeight.w800,
+                                        for (final (index, (label, doc))
+                                            in const [
+                                              (
+                                                'Terms of Service',
+                                                LegalDoc.terms,
+                                              ),
+                                              (
+                                                'Privacy Policy',
+                                                LegalDoc.privacy,
+                                              ),
+                                            ].indexed) ...[
+                                          if (index == 1)
+                                            const TextSpan(text: ' and '),
+                                          legalLink(
+                                            context,
+                                            label,
+                                            doc,
+                                            const TextStyle(
+                                              color: WelcomeScreen._navy,
+                                              decoration:
+                                                  TextDecoration.underline,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 12,
+                                              height: 1.45,
+                                            ),
                                           ),
-                                        ),
+                                        ],
+                                        const TextSpan(text: '.'),
                                       ],
                                     ),
                                     textAlign: TextAlign.center,

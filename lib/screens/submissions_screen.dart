@@ -335,7 +335,7 @@ class _SubmissionStatusPill extends StatelessWidget {
           status.label,
           style: TextStyle(
             color: status.foreground,
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -385,7 +385,7 @@ class _ContributorProgressCard extends StatelessWidget {
                     'Community contributor',
                     style: TextStyle(
                       color: Color(0xFFBFD0E0),
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
                   ),

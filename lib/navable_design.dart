@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 abstract final class NavAblePalette {
   static const navy = Color(0xFF0F2B4D);
@@ -32,6 +33,52 @@ abstract final class NavAblePreferences {
   static final themeMode = ValueNotifier<ThemeMode>(ThemeMode.dark);
   static final textScale = ValueNotifier<double>(1);
   static final language = ValueNotifier<String>('English (United States)');
+
+  /// The text size slider's range.
+  static const minTextScale = 0.8;
+  static const maxTextScale = 1.2;
+
+  static bool _saving = false;
+
+  /// Restores the saved theme and text size (on this device), then keeps
+  /// saving them whenever they change. Call once before the app starts.
+  static Future<void> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final theme = prefs.getString('theme_mode');
+      themeMode.value = theme == 'light' ? ThemeMode.light : ThemeMode.dark;
+      final scale = prefs.getDouble('text_scale');
+      textScale.value =
+          scale != null && scale >= minTextScale && scale <= maxTextScale
+          ? scale
+          : 1;
+    } catch (_) {
+      // Storage unavailable: keep the defaults.
+    }
+    if (_saving) return;
+    _saving = true;
+    themeMode.addListener(
+      () => _save(
+        (prefs) => prefs.setString(
+          'theme_mode',
+          themeMode.value == ThemeMode.light ? 'light' : 'dark',
+        ),
+      ),
+    );
+    textScale.addListener(
+      () => _save((prefs) => prefs.setDouble('text_scale', textScale.value)),
+    );
+  }
+
+  static Future<void> _save(
+    Future<bool> Function(SharedPreferences prefs) write,
+  ) async {
+    try {
+      await write(await SharedPreferences.getInstance());
+    } catch (_) {
+      // Not saved; the choice still applies until the app closes.
+    }
+  }
 }
 
 abstract final class NavAbleSpacing {

@@ -36,25 +36,13 @@ class ProfileStatsApi {
       }
     }
 
-    final counts = await Future.wait([
-      safeCount('reports'),
-      safeCount('favorites'),
-    ]);
-    int? points;
-    try {
-      final profile = await client
-          .from('profiles')
-          .select('contribution_points')
-          .eq('id', user.id)
-          .maybeSingle();
-      points = (profile?['contribution_points'] as num?)?.round();
-    } on PostgrestException {
-      // The profile counter is optional for existing projects.
-    }
+    final reportCount = await safeCount('reports');
     return ProfileStats(
-      contributionPoints: points,
-      reportCount: counts[0],
-      savedPlaceCount: counts[1],
+      // Points now come from PointsApi.myStanding (contribution_points).
+      contributionPoints: null,
+      reportCount: reportCount,
+      // Saved places live on the device (see SavedPlacesStore).
+      savedPlaceCount: null,
     );
   }
 }

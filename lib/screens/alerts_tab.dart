@@ -1,10 +1,19 @@
 part of '../home.dart';
 
 class _AlertsPage extends StatelessWidget {
-  const _AlertsPage({required this.reports, required this.onOpenReport});
+  const _AlertsPage({
+    required this.reports,
+    required this.alerts,
+    required this.onOpenReports,
+  });
 
-  final List<AccessReport> reports;
-  final ValueChanged<AccessReport> onOpenReport;
+  /// The user's stored reports with their review status.
+  final List<MyReport> reports;
+
+  /// Alerts from the database (points, level ups, admin messages), newest
+  /// first; shown after the reports.
+  final List<AppAlert> alerts;
+  final VoidCallback onOpenReports;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +44,7 @@ class _AlertsPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: NavAbleSpacing.lg),
-        if (reports.isEmpty)
+        if (reports.isEmpty && alerts.isEmpty)
           _EmptyState(
             icon: Icons.notifications_none_rounded,
             title: 'No alerts yet',
@@ -47,16 +56,61 @@ class _AlertsPage extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: NavAbleSpacing.sm),
               child: _AlertCard(
                 leading: _AlertStatusIcon(
-                  icon: report.icon,
+                  icon: _reportStatusIcon(report.status),
                   foreground: context.navAblePrimaryText,
                   background: NavAblePalette.green.withValues(alpha: 0.16),
                 ),
-                title: 'Awaiting administrator review',
-                time: 'Submitted',
-                body: '${report.title}: ${report.detail}',
-                onTap: () => onOpenReport(report),
+                title: report.status == ReportStatus.pending
+                    ? 'Awaiting administrator review'
+                    : 'Report ${report.status.label.toLowerCase()}',
+                time: _alertTime(report.createdAt),
+                body: '${report.title} · ${report.placeName}',
+                onTap: onOpenReports,
               ),
             ),
+        for (final alert in alerts)
+          Padding(
+            padding: const EdgeInsets.only(bottom: NavAbleSpacing.sm),
+            child: _AlertCard(
+              leading: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _AlertStatusIcon(
+                    icon: switch (alert.type) {
+                      'Points' => Icons.stars_rounded,
+                      'Level Up' => Icons.military_tech_rounded,
+                      _ => Icons.info_outline_rounded,
+                    },
+                    foreground: context.navAblePrimaryText,
+                    background: NavAblePalette.green.withValues(alpha: 0.16),
+                  ),
+                  if (!alert.isRead)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Semantics(
+                        label: 'New',
+                        child: Container(
+                          width: 11,
+                          height: 11,
+                          decoration: BoxDecoration(
+                            color: NavAblePalette.green,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Theme.of(context).scaffoldBackgroundColor,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              title: alert.title,
+              time: _alertTime(alert.createdAt),
+              body: alert.message,
+            ),
+          ),
       ],
     );
   }
@@ -155,4 +209,13 @@ class _AlertStatusIcon extends StatelessWidget {
       child: Icon(icon, size: 23, color: foreground),
     );
   }
+}
+
+/// "Just now", "5m", "3h", or "Nov 7".
+String _alertTime(DateTime at) {
+  final age = DateTime.now().difference(at);
+  if (age.inMinutes < 1) return 'Just now';
+  if (age.inHours < 1) return '${age.inMinutes}m';
+  if (age.inDays < 1) return '${age.inHours}h';
+  return _shortDate(at);
 }

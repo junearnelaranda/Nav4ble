@@ -235,4 +235,48 @@ void main() {
       expect(rows, isEmpty);
     });
   });
+
+  group('MyReport', () {
+    test('reads title, details and place from a stored report', () {
+      final r = MyReport.fromRow({
+        'report_id': 'r1',
+        'report_type': 'Broken Ramp',
+        'description': '[Ramp] Ramp is cracked: The left side is broken.',
+        'status': 'Verified',
+        'created_at': '2026-11-07T03:00:00Z',
+        'locations': {'location_name': 'Ayala Center Cebu'},
+      })!;
+      expect(r.id, 'r1');
+      expect(r.category, 'Ramp');
+      expect(r.title, 'Ramp is cracked');
+      expect(r.detail, 'The left side is broken.');
+      expect(r.placeName, 'Ayala Center Cebu');
+      expect(r.status, ReportStatus.verified);
+    });
+
+    test('plain descriptions and unknown statuses still read', () {
+      final r = MyReport.fromRow({
+        'report_id': 'r2',
+        'report_type': 'Others',
+        'description': 'Something odd',
+        'status': 'Archived',
+        'created_at': '2026-11-07T03:00:00Z',
+        'locations': null,
+      })!;
+      expect(r.title, 'Something odd');
+      expect(r.category, 'Others');
+      expect(r.placeName, 'a place');
+      expect(r.status, ReportStatus.pending);
+      expect(MyReport.fromRow({'description': 'x'}), isNull);
+    });
+
+    test('each status maps to its label', () {
+      expect(ReportStatus.values.map((s) => s.label), [
+        'Waiting for review',
+        'Verified',
+        'Resolved',
+        'Not approved',
+      ]);
+    });
+  });
 }

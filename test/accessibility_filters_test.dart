@@ -56,15 +56,57 @@ void main() {
     );
   });
 
-  test('filters keep places with no info yet and hide known misfits', () {
+  test('a place that has the feature matches', () {
     const ramps = [AccessibilityFilterWords.ramps];
-    expect(accessibilityFilterMatch(ayala, ramps), FilterMatch.matches);
-    expect(accessibilityFilterMatch(const [], ramps), FilterMatch.unknown);
-    expect(accessibilityFilterMatch(const [], const []), FilterMatch.unknown);
+    expect(filterMatch(has: ayala, selected: ramps), FilterMatch.matches);
+  });
+
+  test('missing info is unknown, never a reason to hide', () {
+    const elevators = [AccessibilityFilterWords.elevators];
+    // Google lists entrance and parking but never reports elevators.
     expect(
-      accessibilityFilterMatch(const ['Braille signage'], ramps),
+      filterMatch(
+        has: const ['Accessible entrance', 'Accessible parking'],
+        selected: elevators,
+      ),
+      FilterMatch.unknown,
+    );
+    expect(
+      filterMatch(has: const [], selected: elevators),
+      FilterMatch.unknown,
+    );
+  });
+
+  test('only an explicit "no" hides a place', () {
+    expect(
+      filterMatch(
+        has: const ['Accessible entrance'],
+        lacks: const ['Accessible restroom'],
+        selected: const [AccessibilityFilterWords.toilet],
+      ),
       FilterMatch.excluded,
     );
+  });
+
+  test('every selected filter must be met to match', () {
+    const both = [
+      AccessibilityFilterWords.ramps,
+      AccessibilityFilterWords.audio,
+    ];
+    expect(filterMatch(has: ayala, selected: both), FilterMatch.unknown);
+    expect(
+      filterMatch(
+        has: ayala,
+        lacks: const ['Audio assistance'],
+        selected: both,
+      ),
+      FilterMatch.excluded,
+    );
+  });
+
+  test('with no filters, places with info match and the rest are unknown', () {
+    expect(filterMatch(has: ayala, selected: const []), FilterMatch.matches);
+    expect(filterMatch(has: const [], selected: const []), FilterMatch.unknown);
   });
 
   test('wheelchair seating is not a ramp', () {

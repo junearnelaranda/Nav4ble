@@ -110,20 +110,20 @@ class _PlanPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final filters = _selectedFilterWords;
-    // Green pins: places that have what the selected chips ask for.
-    // Red pins: places with no accessibility info yet; filters can't rule
-    // them out, so they stay. Only places known not to fit are hidden.
+    // Green pins: places confirmed to have what the selected chips ask for.
+    // Red pins: not confirmed yet (no info, or no info about that feature);
+    // they stay. Only places confirmed to lack it are hidden.
     final matching = accessibleLocations
         .where(
           (l) =>
-              accessibilityFilterMatch(l.features, filters) ==
+              filterMatch(has: l.features, selected: filters) ==
               FilterMatch.matches,
         )
         .toList();
     final selected = selectedLocation;
     final pins = [
       for (final location in accessibleLocations)
-        if (accessibilityFilterMatch(location.features, filters) !=
+        if (filterMatch(has: location.features, selected: filters) !=
                 FilterMatch.excluded ||
             // The selected place stays on the map even if it doesn't match.
             location.id == selected?.id)
@@ -131,7 +131,7 @@ class _PlanPage extends StatelessWidget {
     ];
     final visibleResults = [
       for (final result in resultPins)
-        if (accessibilityFilterMatch([?result.accessibility], filters) !=
+        if (filterMatch(has: [?result.accessibility], selected: filters) !=
                 FilterMatch.excluded ||
             result.point == searchedPlace?.point)
           result,
@@ -149,6 +149,12 @@ class _PlanPage extends StatelessWidget {
                   ),
             showLocationButton: true,
             locations: pins,
+            isConfirmed: (location) =>
+                filterMatch(has: location.features, selected: filters) ==
+                FilterMatch.matches,
+            isResultConfirmed: (result) =>
+                filterMatch(has: [?result.accessibility], selected: filters) ==
+                FilterMatch.matches,
             route: walkingRoute,
             searchedPlace: searchedPlace,
             searchResults: visibleResults,
@@ -1292,7 +1298,7 @@ class _PlaceTag extends StatelessWidget {
           label,
           style: const TextStyle(
             color: Color(0xFF147A39),
-            fontSize: 9,
+            fontSize: 11,
             fontWeight: FontWeight.w800,
           ),
         ),
