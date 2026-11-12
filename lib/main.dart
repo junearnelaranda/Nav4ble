@@ -112,8 +112,11 @@ class _MyAppState extends State<MyApp> {
             );
           },
         ),
-        // The splash plays on every launch, signed in or not.
-        home: const SplashScreen(nextScreen: AuthCheck()),
+        // The splash plays only when an account is already signed in on this
+        // device; everyone else goes straight to Get Started.
+        home: AuthService().isLoggedIn()
+            ? const SplashScreen(nextScreen: AuthCheck())
+            : const AuthCheck(),
       ),
     );
   }

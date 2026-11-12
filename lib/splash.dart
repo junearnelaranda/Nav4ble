@@ -14,7 +14,7 @@ class SplashScreen extends StatefulWidget {
   final Widget nextScreen;
 
   /// How long the splash stays before moving on.
-  static const duration = Duration(milliseconds: 1800);
+  static const duration = Duration(milliseconds: 3500);
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();

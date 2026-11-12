@@ -700,9 +700,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
       // Search around the user: "mall" should mean malls nearby.
-      var center = await _currentPositionOrNull();
+      // A position found earlier stands in when this lookup gives none.
+      var center = await _currentPositionOrNull() ?? _userPosition;
       if (!mounted) return;
-      _userPosition = center ?? _userPosition;
+      _userPosition = center;
       if (center == null && nearMe) {
         _showMessage(
           'Turn on location to search near you. Showing results near '
@@ -780,7 +781,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     caseSensitive: false,
   );
 
+  /// The user's position, or null when location is off, refused, or takes
+  /// longer than a few seconds. Capped so an unanswered permission prompt
+  /// (easy to miss in a browser or on a computer) can't stall a search.
   Future<osm.LatLng?> _currentPositionOrNull() async {
+    try {
+      return await _lookUpPosition().timeout(const Duration(seconds: 6));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<osm.LatLng?> _lookUpPosition() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return null;
       var permission = await Geolocator.checkPermission();
