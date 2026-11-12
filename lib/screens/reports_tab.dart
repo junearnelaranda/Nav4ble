@@ -70,7 +70,6 @@ class _ReportsPageState extends State<_ReportsPage> {
     'Step-free entrance',
     'Accessible toilet',
     'Tactile paving',
-    'Audio assistance',
     'Wheelchair parking',
   ];
 
