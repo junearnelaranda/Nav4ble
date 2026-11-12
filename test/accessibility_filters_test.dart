@@ -24,7 +24,7 @@ void main() {
     expect(
       matchesAccessibilityFilters(ayala, const [
         AccessibilityFilterWords.ramps,
-        AccessibilityFilterWords.audio,
+        AccessibilityFilterWords.parking,
       ]),
       isFalse,
     );
@@ -91,13 +91,13 @@ void main() {
   test('every selected filter must be met to match', () {
     const both = [
       AccessibilityFilterWords.ramps,
-      AccessibilityFilterWords.audio,
+      AccessibilityFilterWords.parking,
     ];
     expect(filterMatch(has: ayala, selected: both), FilterMatch.unknown);
     expect(
       filterMatch(
         has: ayala,
-        lacks: const ['Audio assistance'],
+        lacks: const ['Accessible parking'],
         selected: both,
       ),
       FilterMatch.excluded,

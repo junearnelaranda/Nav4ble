@@ -8,7 +8,6 @@ abstract final class AccessibilityFilterWords {
   static const entrance = ['entrance', 'step-free'];
   static const toilet = ['toilet', 'restroom'];
   static const tactile = ['tactile', 'braille'];
-  static const audio = ['audio'];
   // Google Maps also reports these two.
   static const parking = ['parking'];
   static const seating = ['seating'];

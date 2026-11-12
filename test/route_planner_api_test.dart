@@ -46,4 +46,28 @@ void main() {
     expect(results.last.displayName, 'Cebu City');
     expect(results.first.isAccessible, isFalse);
   });
+
+  test('reads OpenStreetMap places of one category', () {
+    const body = """
+{"elements":[
+ {"type":"way","id":1,"center":{"lat":10.3115,"lon":123.9180},
+  "tags":{"name":"SM City Cebu","shop":"mall","wheelchair":"yes",
+          "addr:street":"Juan Luna Avenue","addr:city":"Cebu City"}},
+ {"type":"node","id":2,"lat":10.3187,"lon":123.9049,
+  "tags":{"name":"Ayala Center Cebu","shop":"mall"}},
+ {"type":"node","id":3,"lat":10.3,"lon":123.9,"tags":{"shop":"mall"}},
+ {"type":"way","id":4,"tags":{"name":"No position"}}
+]}""";
+    final places = RoutePlannerApi.parseOverpass(
+      body,
+      categoryLabel: 'Shopping mall',
+    );
+    expect(places.map((p) => p.name), ['SM City Cebu', 'Ayala Center Cebu']);
+    expect(places.first.point, const LatLng(10.3115, 123.9180));
+    expect(places.first.displayName, 'Juan Luna Avenue, Cebu City');
+    expect(places.first.accessibility, 'Wheelchair accessible');
+    expect(places.first.category, 'Shopping mall');
+    expect(places.last.displayName, 'Shopping mall');
+    expect(places.last.isAccessible, isFalse);
+  });
 }

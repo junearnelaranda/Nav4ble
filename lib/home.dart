@@ -16,6 +16,7 @@ import 'login.dart';
 import 'navable_design.dart';
 import 'accessibility_filters.dart';
 import 'locations_api.dart';
+import 'place_categories.dart';
 import 'place_search.dart';
 import 'places_api.dart';
 import 'points/celebration_store.dart';
@@ -82,12 +83,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _profileStatsLoading = true;
   bool _locationsLoading = true;
   String? _locationsError;
-  bool _avoidStairs = true;
+  bool _avoidStairs = false; // no filter is on until the user picks one
   bool _prioritizeElevators = false;
   bool _accessibleEntrance = false;
   bool _accessibleToilet = false;
   bool _tactilePaving = false;
-  bool _audioAssistance = false;
   bool _accessibleParking = false;
   bool _wheelchairSeating = false;
   bool _routing = false;
@@ -368,9 +368,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         _accessibleLocations = locations;
-        if (!refresh) {
-          _selectedMapLocation = locations.isEmpty ? null : locations.first;
-        } else if (_selectedMapLocation case final selected?) {
+        // Nothing is picked until the user taps a pin or a search result.
+        if (_selectedMapLocation case final selected?) {
           // Same place, with its updated photo and features.
           _selectedMapLocation = locations
               .where((l) => l.id == selected.id)
@@ -578,6 +577,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ].join(' · '),
             point: osm.LatLng(location.latitude, location.longitude),
             accessibility: navAbleFeatures(location),
+            category: location.category.isEmpty ? null : location.category,
           ),
         );
     // A map result at a verified NavAble place takes NavAble's features.
@@ -710,20 +710,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
       }
       center ??= _searchedPlace?.point ?? _cebuMapCenter;
-      // Within ~5 km first, then ~20 km, then anywhere (for exact names
-      // farther away). "near me" stops at ~5 km.
       var mapResults = const <PlaceSearchResult>[];
-      for (final (reach, bounded) in [
-        (0.05, true),
-        if (!nearMe) ...[(0.2, true), (0.2, false)],
-      ]) {
-        mapResults = await RoutePlannerApi.searchPlaces(
-          query: searchText,
-          near: center,
-          reach: reach,
-          bounded: bounded,
-        );
-        if (mapResults.isNotEmpty) break;
+      final category = categoryForQuery(searchText);
+      if (category != null) {
+        // Just a type of place ("mall"): every one nearby, as pins.
+        // Within 5 km, or 15 km when none are that close.
+        try {
+          for (final radius in [5000, if (!nearMe) 15000]) {
+            mapResults = await RoutePlannerApi.categoryPlaces(
+              category,
+              near: center,
+              radiusMeters: radius,
+            );
+            if (mapResults.isNotEmpty) break;
+          }
+        } on RoutePlannerException {
+          // The category server is down or busy; the regular search below
+          // still finds the main ones.
+        }
+        if (!mounted) return;
+        if (mapResults.isEmpty) {
+          for (final reach in [0.05, if (!nearMe) 0.2]) {
+            mapResults = await RoutePlannerApi.searchPlaces(
+              query: category.aliases.first,
+              near: center,
+              reach: reach,
+              bounded: true,
+              limit: 40,
+            );
+            if (mapResults.isNotEmpty) break;
+          }
+        }
+      } else {
+        // Within ~5 km first, then ~20 km, then anywhere (for exact names
+        // farther away). "near me" stops at ~5 km.
+        for (final (reach, bounded) in [
+          (0.05, true),
+          if (!nearMe) ...[(0.2, true), (0.2, false)],
+        ]) {
+          mapResults = await RoutePlannerApi.searchPlaces(
+            query: searchText,
+            near: center,
+            reach: reach,
+            bounded: bounded,
+          );
+          if (mapResults.isNotEmpty) break;
+        }
       }
       if (!mounted) return;
       final results = _withNavAblePlaces(searchText, mapResults, center);
@@ -1242,7 +1274,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     var entrance = _accessibleEntrance;
     var toilet = _accessibleToilet;
     var tactile = _tactilePaving;
-    var audio = _audioAssistance;
     var parking = _accessibleParking;
     var seating = _wheelchairSeating;
 
@@ -1337,13 +1368,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 setSheetState(() => tactile = value),
                           ),
                           _FilterOptionTile(
-                            icon: Icons.hearing_rounded,
-                            label: 'Audio Assistance',
-                            value: audio,
-                            onChanged: (value) =>
-                                setSheetState(() => audio = value),
-                          ),
-                          _FilterOptionTile(
                             icon: Icons.local_parking_rounded,
                             label: 'Accessible Parking',
                             value: parking,
@@ -1377,7 +1401,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 _accessibleEntrance = entrance;
                                 _accessibleToilet = toilet;
                                 _tactilePaving = tactile;
-                                _audioAssistance = audio;
                                 _accessibleParking = parking;
                                 _wheelchairSeating = seating;
                               });
@@ -1409,7 +1432,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 entrance = false;
                                 toilet = false;
                                 tactile = false;
-                                audio = false;
                                 parking = false;
                                 seating = false;
                               });
@@ -1468,7 +1490,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         accessibleEntrance: _accessibleEntrance,
         accessibleToilet: _accessibleToilet,
         tactilePaving: _tactilePaving,
-        audioAssistance: _audioAssistance,
         accessibleParking: _accessibleParking,
         wheelchairSeating: _wheelchairSeating,
         onLocationSelected: _selectMapLocation,
@@ -1481,8 +1502,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             setState(() => _accessibleToilet = value),
         onTactilePavingChanged: (value) =>
             setState(() => _tactilePaving = value),
-        onAudioAssistanceChanged: (value) =>
-            setState(() => _audioAssistance = value),
         onAccessibleParkingChanged: (value) =>
             setState(() => _accessibleParking = value),
         onWheelchairSeatingChanged: (value) =>

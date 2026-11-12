@@ -44,7 +44,6 @@ const _exploreFilters = <(String, IconData, List<String>)>[
   ('Accessible Restroom', Icons.wc_rounded, ['restroom', 'toilet']),
   ('Ramp', Icons.accessible_forward_rounded, ['ramp']),
   ('Braille', Icons.grid_on_rounded, ['braille', 'tactile']),
-  ('Audio Assistance', Icons.hearing_rounded, ['audio']),
   // Google Maps also reports these two.
   ('Accessible Parking', Icons.local_parking_rounded, ['parking']),
   ('Wheelchair Seating', Icons.event_seat_outlined, ['seating']),
@@ -52,7 +51,7 @@ const _exploreFilters = <(String, IconData, List<String>)>[
 
 /// How a place fares against the selected chips: yes, no or unknown per
 /// chip (see [filterMatch]). Only an explicit "no" hides a place; Google, for
-/// example, never reports elevators, ramps, braille or audio.
+/// example, never reports elevators, ramps or braille.
 FilterMatch _exploreMatch(
   Iterable<String> has,
   Iterable<String> lacks,

@@ -45,10 +45,13 @@ Widget _navAbleDarkTileBuilder(
 /// `fm.Marker` sized [width] x [height] times [scale], with [anchor], so the
 /// needle tip, in the ring's hole, sits exactly on the map point.
 class _PushPin extends StatelessWidget {
-  const _PushPin({this.color = _selectedPinOrange, this.scale = 1});
+  const _PushPin({this.color = _selectedPinOrange, this.scale = 1, this.icon});
 
   final Color color;
   final double scale;
+
+  /// The place's category ("mall", "cafe"), drawn white on the pin's head.
+  final IconData? icon;
 
   static const width = 36.0;
   static const height = 62.0;
@@ -65,9 +68,24 @@ class _PushPin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size(width * scale, height * scale),
-      painter: _PushPinPainter(color),
+    final w = width * scale;
+    final pin = CustomPaint(
+      size: Size(w, height * scale),
+      painter: _PushPinPainter(color, shine: icon == null),
+    );
+    final glyph = icon;
+    if (glyph == null) return pin;
+    // The head is a circle centred at (w / 2, 0.42 w); see the painter.
+    final iconSize = w * 0.46;
+    return Stack(
+      children: [
+        pin,
+        Positioned(
+          left: (w - iconSize) / 2,
+          top: w * 0.42 - iconSize / 2,
+          child: Icon(glyph, size: iconSize, color: Colors.white),
+        ),
+      ],
     );
   }
 }
@@ -78,9 +96,12 @@ const _pushPinRed = Color(0xFFF25C5C);
 const _selectedPinOrange = Color(0xFFFF8A00);
 
 class _PushPinPainter extends CustomPainter {
-  const _PushPinPainter(this.color);
+  const _PushPinPainter(this.color, {this.shine = true});
 
   final Color color;
+
+  /// The shine marks, left off when an icon sits on the head.
+  final bool shine;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -137,9 +158,10 @@ class _PushPinPainter extends CustomPainter {
     canvas.drawCircle(headCenter, radius, Paint()..color = color);
     canvas.drawCircle(headCenter, radius, outline);
 
+    if (!shine) return;
     // Shine: a curved stroke and a dot on the upper left.
-    final shine = Rect.fromCircle(center: headCenter, radius: radius * 0.62);
-    canvas.drawArc(shine, 3.55, 1.25, false, outline);
+    final shineArc = Rect.fromCircle(center: headCenter, radius: radius * 0.62);
+    canvas.drawArc(shineArc, 3.55, 1.25, false, outline);
     canvas.drawCircle(
       headCenter + Offset.fromDirection(3.2, radius * 0.62),
       stroke * 0.55,
@@ -149,7 +171,7 @@ class _PushPinPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PushPinPainter oldDelegate) =>
-      oldDelegate.color != color;
+      oldDelegate.color != color || oldDelegate.shine != shine;
 }
 
 class _OpenStreetMapView extends StatefulWidget {
@@ -172,8 +194,8 @@ class _OpenStreetMapView extends StatefulWidget {
     this.isResultConfirmed,
   });
 
-  /// Green pin when true, red ("not confirmed") otherwise. Defaults to
-  /// "has any accessibility info"; Home passes its filter result instead.
+  /// False fades a pin: it doesn't match the chosen filters. Color never
+  /// changes with filters: green has accessibility info, red has none yet.
   final bool Function(AccessibleLocation location)? isConfirmed;
   final bool Function(PlaceSearchResult result)? isResultConfirmed;
 
@@ -421,15 +443,23 @@ class _OpenStreetMapViewState extends State<_OpenStreetMapView> {
                             child: _pushPinAt(location)
                                 ? const SizedBox.expand()
                                 : location.id == widget.selectedLocationId
-                                ? const _PushPin()
-                                : _PushPin(
-                                    // Red until it has accessibility features.
-                                    color:
+                                ? _PushPin(
+                                    icon: iconForCategory(location.category),
+                                  )
+                                : Opacity(
+                                    opacity:
                                         (widget.isConfirmed?.call(location) ??
-                                            location.features.isNotEmpty)
-                                        ? pinColor
-                                        : _pushPinRed,
-                                    scale: _PushPin.small,
+                                            true)
+                                        ? 1
+                                        : 0.4,
+                                    child: _PushPin(
+                                      // Red until it has accessibility features.
+                                      color: location.features.isNotEmpty
+                                          ? pinColor
+                                          : _pushPinRed,
+                                      scale: _PushPin.small,
+                                      icon: iconForCategory(location.category),
+                                    ),
                                   ),
                           ),
                         ),
@@ -461,13 +491,19 @@ class _OpenStreetMapViewState extends State<_OpenStreetMapView> {
                             message: result.isAccessible
                                 ? '${result.name}: ${result.accessibility}'
                                 : '${result.name}: no accessibility info yet',
-                            child: _PushPin(
-                              color:
+                            child: Opacity(
+                              opacity:
                                   (widget.isResultConfirmed?.call(result) ??
-                                      result.isAccessible)
-                                  ? pinColor
-                                  : _pushPinRed,
-                              scale: _PushPin.small,
+                                      true)
+                                  ? 1
+                                  : 0.4,
+                              child: _PushPin(
+                                color: result.isAccessible
+                                    ? pinColor
+                                    : _pushPinRed,
+                                scale: _PushPin.small,
+                                icon: iconForCategory(result.category),
+                              ),
                             ),
                           ),
                         ),
@@ -502,7 +538,7 @@ class _OpenStreetMapViewState extends State<_OpenStreetMapView> {
                       width: _PushPin.width,
                       height: _PushPin.height,
                       alignment: _PushPin.anchor,
-                      child: const _PushPin(),
+                      child: _PushPin(icon: iconForCategory(place.category)),
                     ),
                   if (widget.route case final route?)
                     fm.Marker(

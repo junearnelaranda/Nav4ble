@@ -22,7 +22,6 @@ class _PlanPage extends StatelessWidget {
     required this.accessibleEntrance,
     required this.accessibleToilet,
     required this.tactilePaving,
-    required this.audioAssistance,
     required this.accessibleParking,
     required this.wheelchairSeating,
     required this.onLocationSelected,
@@ -31,7 +30,6 @@ class _PlanPage extends StatelessWidget {
     required this.onAccessibleEntranceChanged,
     required this.onAccessibleToiletChanged,
     required this.onTactilePavingChanged,
-    required this.onAudioAssistanceChanged,
     required this.onAccessibleParkingChanged,
     required this.onWheelchairSeatingChanged,
     required this.onDestinationChanged,
@@ -70,7 +68,6 @@ class _PlanPage extends StatelessWidget {
   final bool accessibleEntrance;
   final bool accessibleToilet;
   final bool tactilePaving;
-  final bool audioAssistance;
   final bool accessibleParking;
   final bool wheelchairSeating;
   final ValueChanged<AccessibleLocation> onLocationSelected;
@@ -79,7 +76,6 @@ class _PlanPage extends StatelessWidget {
   final ValueChanged<bool> onAccessibleEntranceChanged;
   final ValueChanged<bool> onAccessibleToiletChanged;
   final ValueChanged<bool> onTactilePavingChanged;
-  final ValueChanged<bool> onAudioAssistanceChanged;
   final ValueChanged<bool> onAccessibleParkingChanged;
   final ValueChanged<bool> onWheelchairSeatingChanged;
   final ValueChanged<String> onDestinationChanged;
@@ -102,7 +98,6 @@ class _PlanPage extends StatelessWidget {
     if (accessibleEntrance) AccessibilityFilterWords.entrance,
     if (accessibleToilet) AccessibilityFilterWords.toilet,
     if (tactilePaving) AccessibilityFilterWords.tactile,
-    if (audioAssistance) AccessibilityFilterWords.audio,
     if (accessibleParking) AccessibilityFilterWords.parking,
     if (wheelchairSeating) AccessibilityFilterWords.seating,
   ];
@@ -110,9 +105,9 @@ class _PlanPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final filters = _selectedFilterWords;
-    // Green pins: places confirmed to have what the selected chips ask for.
-    // Red pins: not confirmed yet (no info, or no info about that feature);
-    // they stay. Only places confirmed to lack it are hidden.
+    // Green pins have accessibility info, red pins none yet (filters never
+    // change that). With filters on, pins that don't match are faded, and
+    // only places confirmed to lack a chosen feature are hidden.
     final matching = accessibleLocations
         .where(
           (l) =>
@@ -136,6 +131,33 @@ class _PlanPage extends StatelessWidget {
             result.point == searchedPlace?.point)
           result,
     ];
+    final wide = MediaQuery.sizeOf(context).width >= 640;
+    final actionButtons = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        _MapActionButton(
+          icon: Icons.bookmark_border_rounded,
+          tooltip: 'Saved places',
+          label: 'Saved',
+          onPressed: onOpenSaved,
+        ),
+        const SizedBox(height: 9),
+        _MapActionButton(
+          icon: Icons.campaign_outlined,
+          tooltip: 'Report an accessibility issue',
+          label: 'Report',
+          onPressed: onReportBarrier,
+        ),
+        const SizedBox(height: 9),
+        _MapActionButton(
+          icon: Icons.document_scanner_outlined,
+          tooltip: 'Scan an accessibility feature',
+          label: 'Scan',
+          onPressed: onSubmitAccessiblePhoto,
+        ),
+      ],
+    );
     return Stack(
       children: [
         Positioned.fill(
@@ -149,12 +171,15 @@ class _PlanPage extends StatelessWidget {
                   ),
             showLocationButton: true,
             locations: pins,
+            // With filters on, pins that don't match them are faded.
             isConfirmed: (location) =>
+                filters.isEmpty ||
                 filterMatch(has: location.features, selected: filters) ==
-                FilterMatch.matches,
+                    FilterMatch.matches,
             isResultConfirmed: (result) =>
+                filters.isEmpty ||
                 filterMatch(has: [?result.accessibility], selected: filters) ==
-                FilterMatch.matches,
+                    FilterMatch.matches,
             route: walkingRoute,
             searchedPlace: searchedPlace,
             searchResults: visibleResults,
@@ -237,13 +262,6 @@ class _PlanPage extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       _AccessibilityFilterChip(
-                        icon: Icons.hearing_rounded,
-                        label: 'Audio Assistance',
-                        selected: audioAssistance,
-                        onSelected: onAudioAssistanceChanged,
-                      ),
-                      const SizedBox(width: 8),
-                      _AccessibilityFilterChip(
                         icon: Icons.local_parking_rounded,
                         label: 'Parking',
                         selected: accessibleParking,
@@ -283,42 +301,17 @@ class _PlanPage extends StatelessWidget {
         ),
         Positioned(
           left: 12,
-          right: 12,
+          // Wide screens: leave room for the fixed buttons on the right.
+          right: wide ? 170 : 12,
           bottom: 12,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (!isGuest) ...[
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _MapActionButton(
-                        icon: Icons.bookmark_border_rounded,
-                        tooltip: 'Saved places',
-                        label: 'Saved',
-                        onPressed: onOpenSaved,
-                      ),
-                      const SizedBox(height: 9),
-                      _MapActionButton(
-                        icon: Icons.campaign_outlined,
-                        tooltip: 'Report an accessibility issue',
-                        label: 'Report',
-                        onPressed: onReportBarrier,
-                      ),
-                      const SizedBox(height: 9),
-                      _MapActionButton(
-                        icon: Icons.document_scanner_outlined,
-                        tooltip: 'Scan an accessibility feature',
-                        label: 'Scan',
-                        onPressed: onSubmitAccessiblePhoto,
-                      ),
-                    ],
-                  ),
-                ),
+              // Narrow screens: the card spans the width, so the buttons sit
+              // above it. Wide screens give them their own fixed spot.
+              if (!isGuest && !wide) ...[
+                Align(alignment: Alignment.centerRight, child: actionButtons),
                 const SizedBox(height: 12),
               ],
               if (routeStatus != null) ...[
@@ -355,29 +348,17 @@ class _PlanPage extends StatelessWidget {
               ],
               Align(
                 alignment: Alignment.centerLeft,
-                child:
-                    selectedPlace != null &&
-                        selectedPlace!.accessibleLocation == null
-                    ? const _MapLabel(
-                        icon: Icons.place_rounded,
-                        label: 'Selected Place',
-                      )
-                    : const _MapLabel(
-                        icon: Icons.accessible_rounded,
-                        label: 'Accessible Location',
-                      ),
-              ),
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerLeft,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 420),
+                  // The place card shows only once a place is picked; until
+                  // then the map stays clear (a loading error still shows).
                   child: switch (selectedPlace) {
-                    null => _NearbyLocationMessage(
-                      loading: locationsLoading,
+                    null when locationsError != null => _NearbyLocationMessage(
+                      loading: false,
                       error: locationsError,
                       hasLocations: accessibleLocations.isNotEmpty,
                     ),
+                    null => const SizedBox.shrink(),
                     final place => _AutoCollapsePlaceCard(
                       place: place,
                       onOpenMaps: onOpenInGoogleMaps,
@@ -396,6 +377,10 @@ class _PlanPage extends StatelessWidget {
             ],
           ),
         ),
+        // Wide screens: fixed at the bottom right, beside the place card,
+        // so they don't move when the card grows.
+        if (!isGuest && wide)
+          Positioned(right: 12, bottom: 12, child: actionButtons),
       ],
     );
   }

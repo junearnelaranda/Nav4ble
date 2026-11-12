@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import 'locations_api.dart';
+import 'place_categories.dart';
 
 class RoutePlannerException implements Exception {
   const RoutePlannerException(this.message);
@@ -70,11 +71,16 @@ class PlaceSearchResult {
     required this.displayName,
     required this.point,
     this.accessibility,
+    this.category,
   });
 
   final String name;
   final String displayName;
   final LatLng point;
+
+  /// What kind of place it is ("Shopping mall"), when known; picks the
+  /// pin's icon.
+  final String? category;
 
   /// What's known about its accessibility (NavAble features, or the
   /// OpenStreetMap wheelchair tag); null when nothing is known yet.
@@ -87,6 +93,7 @@ class PlaceSearchResult {
     displayName: displayName,
     point: point,
     accessibility: value,
+    category: category,
   );
 }
 
@@ -102,6 +109,95 @@ class RoutePlannerApi {
 
   static const _nominatimEndpoint =
       'https://nominatim.openstreetmap.org/search';
+  static const _overpassEndpoint = 'https://overpass-api.de/api/interpreter';
+  static final Map<String, List<PlaceSearchResult>> _categoryCache = {};
+
+  /// Every place of [category] within [radiusMeters] of [near] (at most
+  /// [limit]), from OpenStreetMap through the Overpass API. Used when a
+  /// search is just a type of place ("mall"), so all of them show as pins.
+  static Future<List<PlaceSearchResult>> categoryPlaces(
+    PlaceCategory category, {
+    required LatLng near,
+    int radiusMeters = 5000,
+    int limit = 80,
+  }) async {
+    final key =
+        '${category.key}:${near.latitude.toStringAsFixed(2)},${near.longitude.toStringAsFixed(2)}:$radiusMeters';
+    final cached = _categoryCache[key];
+    if (cached != null) return cached;
+    final [tagKey, tagValue] = category.osmTag.split('=');
+    final query =
+        '[out:json][timeout:25];'
+        'nwr["$tagKey"="$tagValue"](around:$radiusMeters,${near.latitude},${near.longitude});'
+        'out center tags $limit;';
+    try {
+      final response = await http
+          .post(
+            Uri.parse(_overpassEndpoint),
+            headers: const {'User-Agent': _userAgent},
+            body: {'data': query},
+          )
+          // Public servers are sometimes down; the caller falls back to the
+          // regular search, so don't keep people waiting long.
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw RoutePlannerException(
+          'Place search returned HTTP ${response.statusCode}. Try again later.',
+        );
+      }
+      final results = parseOverpass(
+        response.body,
+        categoryLabel: category.label,
+      );
+      _categoryCache[key] = results;
+      return results;
+    } on RoutePlannerException {
+      rethrow;
+    } on Exception catch (error) {
+      throw RoutePlannerException('Could not reach place search: $error');
+    }
+  }
+
+  /// Reads an Overpass JSON answer: named places only, at their point (or
+  /// the centre of a building or area), with the OpenStreetMap wheelchair
+  /// tag as their accessibility.
+  static List<PlaceSearchResult> parseOverpass(
+    String body, {
+    required String categoryLabel,
+  }) {
+    final decoded = jsonDecode(body);
+    final elements = decoded is Map ? decoded['elements'] : null;
+    if (elements is! List) return const [];
+    final results = <PlaceSearchResult>[];
+    for (final element in elements.whereType<Map>()) {
+      final tags = element['tags'];
+      if (tags is! Map) continue;
+      final name = tags['name']?.toString().trim() ?? '';
+      if (name.isEmpty) continue;
+      final center = element['center'];
+      final lat =
+          ((center is Map ? center['lat'] : null) ?? element['lat']) as num?;
+      final lon =
+          ((center is Map ? center['lon'] : null) ?? element['lon']) as num?;
+      if (lat == null || lon == null) continue;
+      final address = [tags['addr:street'], tags['addr:city']]
+          .whereType<Object>()
+          .map((part) => part.toString().trim())
+          .where((part) => part.isNotEmpty)
+          .join(', ');
+      results.add(
+        PlaceSearchResult(
+          name: name,
+          displayName: address.isEmpty ? categoryLabel : address,
+          point: LatLng(lat.toDouble(), lon.toDouble()),
+          accessibility: wheelchairLabel(tags['wheelchair']),
+          category: categoryLabel,
+        ),
+      );
+    }
+    return List.unmodifiable(results);
+  }
+
   static const _routingEndpoint = 'https://routing.openstreetmap.de';
   static const _userAgent = 'NavAble/1.0 (Flutter accessibility map app)';
   static final Map<String, ({String name, LatLng point})> _placeCache = {};
@@ -238,11 +334,12 @@ class RoutePlannerApi {
     required LatLng near,
     double reach = 0.2,
     bool bounded = false,
+    int limit = 15,
   }) async {
     final normalizedQuery = _normalize(query);
     if (normalizedQuery.isEmpty) return const [];
     final key =
-        '$normalizedQuery:${near.latitude.toStringAsFixed(2)},${near.longitude.toStringAsFixed(2)}:$reach:$bounded';
+        '$normalizedQuery:${near.latitude.toStringAsFixed(2)},${near.longitude.toStringAsFixed(2)}:$reach:$bounded:$limit';
     final cached = _searchCache[key];
     if (cached != null) return cached;
 
@@ -250,7 +347,7 @@ class RoutePlannerApi {
       queryParameters: {
         'q': query,
         'format': 'jsonv2',
-        'limit': '15',
+        'limit': '$limit',
         'addressdetails': '1',
         'extratags': '1', // includes the wheelchair tag
         'viewbox':
@@ -289,6 +386,8 @@ class RoutePlannerApi {
               accessibility: wheelchairLabel(
                 (place['extratags'] as Map?)?['wheelchair'],
               ),
+              // OpenStreetMap's place type ("mall", "hospital") for the icon.
+              category: place['type']?.toString().replaceAll('_', ' '),
             ),
           );
     }
