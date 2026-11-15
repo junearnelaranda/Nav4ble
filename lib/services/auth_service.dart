@@ -149,7 +149,10 @@ class AuthService {
         return const AuthResult(
           isSuccess: true,
           needsConfirmation: true,
-          message: 'Check your email to confirm your account, then sign in.',
+          message:
+              'A confirmation email has been sent to your email address. '
+              "Please check your Inbox. If you don't see it, kindly check "
+              'your Spam or Junk folder.',
         );
       }
       return const AuthResult(isSuccess: true);

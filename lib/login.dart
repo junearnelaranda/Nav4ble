@@ -119,12 +119,6 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  void _showProviderPlaceholder(String provider) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$provider sign in needs platform setup.')),
-    );
-  }
-
   Future<void> _continueAsGuest() async {
     await _authService.logout();
     if (!mounted) return;
@@ -344,23 +338,6 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 22),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _RoundIconButton(
-                                    icon: Icons.fingerprint,
-                                    onPressed: () =>
-                                        _showProviderPlaceholder('Fingerprint'),
-                                  ),
-                                  const SizedBox(width: 18),
-                                  _RoundIconButton(
-                                    icon: Icons.face,
-                                    onPressed: () =>
-                                        _showProviderPlaceholder('Face ID'),
-                                  ),
-                                ],
                               ),
                               const SizedBox(height: 28),
                               Row(
@@ -750,29 +727,6 @@ class _DividerLabel extends StatelessWidget {
         ),
         Expanded(child: Divider(color: Color(0xFFD7DED9))),
       ],
-    );
-  }
-}
-
-class _RoundIconButton extends StatelessWidget {
-  const _RoundIconButton({required this.icon, required this.onPressed});
-
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        fixedSize: const Size.square(NavAbleSize.primaryButton),
-        shape: const CircleBorder(),
-        side: const BorderSide(color: Color(0xFFDDE5DF), width: 1.4),
-        foregroundColor: kNavAbleGreen,
-        backgroundColor: Colors.white.withValues(alpha: 0.8),
-        padding: EdgeInsets.zero,
-      ),
-      child: Icon(icon, size: 30),
     );
   }
 }

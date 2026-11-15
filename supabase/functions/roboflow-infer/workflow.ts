@@ -52,15 +52,31 @@ export type WorkflowResult = {
   detections: Record<string, unknown>[];
 };
 
+// Roboflow's workflow endpoint answers {"outputs": [{predictions: ...}]};
+// older answers were the result itself or a list of results. The
+// "predictions" output is either {image, predictions: [...]} or the list.
 export function parseWorkflowResponse(responseBody: unknown): WorkflowResult {
-  const result = Array.isArray(responseBody) ? responseBody[0] : responseBody;
   // deno-lint-ignore no-explicit-any
-  const output = (result as any)?.[OUTPUT_NAME];
+  let result: any = responseBody;
+  if (result && !Array.isArray(result) && Array.isArray(result.outputs)) {
+    result = result.outputs;
+  }
+  if (Array.isArray(result)) result = result[0];
+  // deno-lint-ignore no-explicit-any
+  let output: any = result?.[OUTPUT_NAME];
+  if (Array.isArray(output)) output = { predictions: output };
   if (
     !output || typeof output !== "object" || !Array.isArray(output.predictions)
   ) {
+    // Field names only (never image data), to show what Roboflow sent.
+    const keys = (value: unknown) =>
+      value && typeof value === "object"
+        ? Object.keys(value).slice(0, 8).join(",")
+        : typeof value;
     throw new WorkflowError(
-      `Roboflow response did not contain the expected "${OUTPUT_NAME}.predictions" array.`,
+      `Roboflow response did not contain the expected "${OUTPUT_NAME}.predictions" array. ` +
+        `Got top-level [${keys(responseBody)}], result [${keys(result)}], ` +
+        `${OUTPUT_NAME} [${keys(result?.[OUTPUT_NAME])}].`,
       "INVALID_WORKFLOW_RESPONSE",
     );
   }

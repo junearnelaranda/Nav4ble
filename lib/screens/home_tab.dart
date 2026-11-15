@@ -42,6 +42,7 @@ class _PlanPage extends StatelessWidget {
     required this.onReportBarrier,
     required this.onSubmitAccessiblePhoto,
     required this.onSubmitPlacePhoto,
+    required this.onShowReviews,
     required this.onOpenSaved,
     required this.onOpenFilters,
   });
@@ -88,6 +89,7 @@ class _PlanPage extends StatelessWidget {
   final VoidCallback onReportBarrier;
   final VoidCallback onSubmitAccessiblePhoto;
   final ValueChanged<AccessibleLocation> onSubmitPlacePhoto;
+  final ValueChanged<AccessibleLocation> onShowReviews;
   final VoidCallback onOpenSaved;
   final VoidCallback onOpenFilters;
 
@@ -369,6 +371,10 @@ class _PlanPage extends StatelessWidget {
                       onAddPhoto: switch (place.accessibleLocation) {
                         null => null,
                         final location => () => onSubmitPlacePhoto(location),
+                      },
+                      onReviews: switch (place.accessibleLocation) {
+                        null => null,
+                        final location => () => onShowReviews(location),
                       },
                     ),
                   },
@@ -803,12 +809,14 @@ class _AutoCollapsePlaceCard extends StatefulWidget {
     required this.onOpenMaps,
     this.onSave,
     this.onAddPhoto,
+    this.onReviews,
   });
 
   final _SelectedPlace place;
   final VoidCallback onOpenMaps;
   final VoidCallback? onSave;
   final VoidCallback? onAddPhoto;
+  final VoidCallback? onReviews;
 
   @override
   State<_AutoCollapsePlaceCard> createState() => _AutoCollapsePlaceCardState();
@@ -880,6 +888,7 @@ class _AutoCollapsePlaceCardState extends State<_AutoCollapsePlaceCard> {
                     onOpenMaps: widget.onOpenMaps,
                     onSave: widget.onSave,
                     onAddPhoto: widget.onAddPhoto,
+                    onReviews: widget.onReviews,
                   )
                 : _CollapsedPlaceCard(
                     key: ValueKey('collapsed-${widget.place.key}'),
@@ -901,12 +910,14 @@ class _PlaceDetailsCard extends StatefulWidget {
     required this.onOpenMaps,
     this.onSave,
     this.onAddPhoto,
+    this.onReviews,
   });
 
   final _SelectedPlace place;
   final VoidCallback onOpenMaps;
   final VoidCallback? onSave;
   final VoidCallback? onAddPhoto;
+  final VoidCallback? onReviews;
 
   @override
   State<_PlaceDetailsCard> createState() => _PlaceDetailsCardState();
@@ -1041,6 +1052,14 @@ class _PlaceDetailsCardState extends State<_PlaceDetailsCard> {
                                 '${place.name}',
                             onPressed: widget.onAddPhoto,
                             icon: const Icon(Icons.add_a_photo_outlined),
+                            color: kNavAbleNavy,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        if (widget.onReviews != null)
+                          IconButton(
+                            tooltip: 'Ratings and reviews for ${place.name}',
+                            onPressed: widget.onReviews,
+                            icon: const Icon(Icons.star_outline_rounded),
                             color: kNavAbleNavy,
                             visualDensity: VisualDensity.compact,
                           ),

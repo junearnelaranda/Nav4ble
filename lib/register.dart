@@ -92,6 +92,8 @@ class _RegisterScreenState extends State<RegisterScreen>
     if (result.needsConfirmation) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          // Long enough to read three sentences.
+          duration: const Duration(seconds: 9),
           content: Text(result.message ?? 'Check your email, then sign in.'),
         ),
       );

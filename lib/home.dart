@@ -23,6 +23,7 @@ import 'points/celebration_store.dart';
 import 'points/points_api.dart';
 import 'profile_stats_api.dart';
 import 'reports_api.dart';
+import 'reviews_api.dart';
 import 'route_planner_api.dart';
 import 'saved_places_store.dart';
 import 'utils/initials.dart';
@@ -44,6 +45,7 @@ part 'screens/level_up_screen.dart';
 part 'screens/report_models.dart';
 part 'screens/route_details_screen.dart';
 part 'screens/saved_places_screen.dart';
+part 'screens/reviews_sheet.dart';
 part 'widgets/home_widgets.dart';
 part 'screens/bug_report_screen.dart';
 part 'widgets/open_street_map_view.dart';
@@ -1532,6 +1534,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
         onSubmitPlacePhoto: (location) =>
             _startPhotoSubmission(location: location),
+        onShowReviews: (location) => _showReviewsSheet(
+          context,
+          location: location,
+          isGuest: widget.isGuest,
+        ),
         onOpenSaved: _openSavedPlaces,
         onOpenFilters: _openAccessibilityFilters,
       ),
