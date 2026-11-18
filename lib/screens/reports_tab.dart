@@ -17,7 +17,11 @@ class _ReportsPage extends StatefulWidget {
     required this.onOpenContributions,
     this.initialKind,
     this.initialGooglePlace,
+    this.onAddGuide,
   });
+
+  /// "Add where to find it" after a feature photo at a NavAble place.
+  final ValueChanged<String>? onAddGuide;
 
   /// The user's stored reports, newest first.
   final List<MyReport> reports;
@@ -302,6 +306,7 @@ class _ReportsPageState extends State<_ReportsPage> {
       return;
     }
 
+    final guidePlaceId = _isIssue ? null : _selectedLocationId;
     setState(() => _isSubmitting = true);
     final submitted = await widget.onSubmitReport(
       AccessReport(
@@ -335,6 +340,11 @@ class _ReportsPageState extends State<_ReportsPage> {
           builder: (context) => _ReportSubmittedScreen(
             onBackToHome: widget.onBackToHome,
             onViewContributions: widget.onOpenContributions,
+            onAddGuide:
+                widget.onAddGuide != null &&
+                    widget.locations.any((place) => place.id == guidePlaceId)
+                ? () => widget.onAddGuide!(guidePlaceId!)
+                : null,
           ),
         ),
       );

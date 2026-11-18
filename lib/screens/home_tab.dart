@@ -43,6 +43,12 @@ class _PlanPage extends StatelessWidget {
     required this.onSubmitAccessiblePhoto,
     required this.onSubmitPlacePhoto,
     required this.onShowReviews,
+    required this.guideSpot,
+    required this.guideOpen,
+    required this.onGuideSpotChanged,
+    required this.onGuideOpenChanged,
+    required this.onAddGuide,
+    required this.onGoToGuideSpot,
     required this.onOpenSaved,
     required this.onOpenFilters,
   });
@@ -90,6 +96,14 @@ class _PlanPage extends StatelessWidget {
   final VoidCallback onSubmitAccessiblePhoto;
   final ValueChanged<AccessibleLocation> onSubmitPlacePhoto;
   final ValueChanged<AccessibleLocation> onShowReviews;
+  final GuideSpot? guideSpot;
+
+  /// A feature's guide is showing in place of the place card.
+  final bool guideOpen;
+  final ValueChanged<GuideSpot?> onGuideSpotChanged;
+  final ValueChanged<bool> onGuideOpenChanged;
+  final void Function(AccessibleLocation location, String feature) onAddGuide;
+  final ValueChanged<FeatureGuide> onGoToGuideSpot;
   final VoidCallback onOpenSaved;
   final VoidCallback onOpenFilters;
 
@@ -103,6 +117,31 @@ class _PlanPage extends StatelessWidget {
     if (accessibleParking) AccessibilityFilterWords.parking,
     if (wheelchairSeating) AccessibilityFilterWords.seating,
   ];
+
+  /// The selected place has guide icons; a marker or open guide from an
+  /// earlier place never carries over to one without them.
+  bool get _guidesShown =>
+      selectedPlace?.accessibleLocation?.features.isNotEmpty ?? false;
+
+  /// NavAble places with features get the floating guide icons above their
+  /// card; every other place keeps the plain card.
+  Widget _placeCardWithGuides(_SelectedPlace place, Widget card) {
+    final location = place.accessibleLocation;
+    if (location == null || location.features.isEmpty) return card;
+    return PlaceGuidePanel(
+      key: ValueKey('guides-${location.id}'),
+      locationId: location.id,
+      features: location.features,
+      isGuest: isGuest,
+      placeCard: card,
+      loadGuides: GuidesApi.forLocation,
+      onSpotChanged: onGuideSpotChanged,
+      onOpenChanged: onGuideOpenChanged,
+      onAddGuide: (feature) => onAddGuide(location, feature),
+      onGoToSpot: onGoToGuideSpot,
+      onDirections: onOpenInGoogleMaps,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -188,6 +227,11 @@ class _PlanPage extends StatelessWidget {
             onSearchResultTapped: onPlaceSelected,
             selectedLocationId: selectedLocation?.id,
             onAccessibleLocationTapped: onLocationSelected,
+            guideSpot: _guidesShown ? guideSpot : null,
+            guideReturnPoint: switch (selectedPlace) {
+              null => null,
+              final place => osm.LatLng(place.latitude, place.longitude),
+            },
           ),
         ),
         Positioned(
@@ -312,7 +356,8 @@ class _PlanPage extends StatelessWidget {
             children: [
               // Narrow screens: the card spans the width, so the buttons sit
               // above it. Wide screens give them their own fixed spot.
-              if (!isGuest && !wide) ...[
+              // They step aside while a feature's guide needs the room.
+              if (!isGuest && !wide && !(guideOpen && _guidesShown)) ...[
                 Align(alignment: Alignment.centerRight, child: actionButtons),
                 const SizedBox(height: 12),
               ],
@@ -361,21 +406,24 @@ class _PlanPage extends StatelessWidget {
                       hasLocations: accessibleLocations.isNotEmpty,
                     ),
                     null => const SizedBox.shrink(),
-                    final place => _AutoCollapsePlaceCard(
-                      place: place,
-                      onOpenMaps: onOpenInGoogleMaps,
-                      onSave: switch (place.accessibleLocation) {
-                        null => null,
-                        final location => () => onSaveDestination(location),
-                      },
-                      onAddPhoto: switch (place.accessibleLocation) {
-                        null => null,
-                        final location => () => onSubmitPlacePhoto(location),
-                      },
-                      onReviews: switch (place.accessibleLocation) {
-                        null => null,
-                        final location => () => onShowReviews(location),
-                      },
+                    final place => _placeCardWithGuides(
+                      place,
+                      _AutoCollapsePlaceCard(
+                        place: place,
+                        onOpenMaps: onOpenInGoogleMaps,
+                        onSave: switch (place.accessibleLocation) {
+                          null => null,
+                          final location => () => onSaveDestination(location),
+                        },
+                        onAddPhoto: switch (place.accessibleLocation) {
+                          null => null,
+                          final location => () => onSubmitPlacePhoto(location),
+                        },
+                        onReviews: switch (place.accessibleLocation) {
+                          null => null,
+                          final location => () => onShowReviews(location),
+                        },
+                      ),
                     ),
                   },
                 ),

@@ -279,4 +279,48 @@ void main() {
       ]);
     });
   });
+
+  group('SubmittedReport', () {
+    SubmittedReport report(List<Map<String, dynamic>> detections) =>
+        SubmittedReport(
+          id: 'r',
+          aiAnalysisStatus: 'completed',
+          detections: detections,
+        );
+
+    test('has no photo link unless one is given', () {
+      expect(report(const []).firstPhotoUrl, isNull);
+      expect(
+        const SubmittedReport(
+          id: 'r',
+          aiAnalysisStatus: 'completed',
+          detections: [],
+          firstPhotoUrl: 'https://x/y.jpg',
+        ).firstPhotoUrl,
+        'https://x/y.jpg',
+      );
+    });
+
+    test('names the most confident detection', () {
+      expect(
+        report(const [
+          {'class': 'ramp', 'confidence': 0.4},
+          {'label': 'elevator', 'confidence': 0.9},
+          {'class_name': 'door', 'confidence': 0.7},
+        ]).topDetection,
+        'elevator',
+      );
+    });
+
+    test('has no top detection without usable labels', () {
+      expect(report(const []).topDetection, isNull);
+      expect(
+        report(const [
+          {'class': ' ', 'confidence': 0.9},
+          {'confidence': 0.9},
+        ]).topDetection,
+        isNull,
+      );
+    });
+  });
 }

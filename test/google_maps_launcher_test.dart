@@ -66,4 +66,21 @@ void main() {
       );
     });
   });
+
+  test('directions default to driving', () {
+    final uri = GoogleMapsLauncher.directionsUri(
+      latitude: 10.3,
+      longitude: 123.9,
+    )!;
+    expect(uri.queryParameters['travelmode'], 'driving');
+  });
+
+  test('a guide spot can ask for walking directions', () {
+    final uri = GoogleMapsLauncher.directionsUri(
+      latitude: 10.3,
+      longitude: 123.9,
+      travelMode: 'walking',
+    )!;
+    expect(uri.queryParameters['travelmode'], 'walking');
+  });
 }

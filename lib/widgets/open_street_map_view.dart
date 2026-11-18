@@ -192,7 +192,16 @@ class _OpenStreetMapView extends StatefulWidget {
     this.borderRadius = BorderRadius.zero,
     this.isConfirmed,
     this.isResultConfirmed,
+    this.guideSpot,
+    this.guideReturnPoint,
   });
+
+  /// A feature's exact spot, drawn on its own layer above the pins while its
+  /// guide is open.
+  final GuideSpot? guideSpot;
+
+  /// Where the map goes back to when [guideSpot] is cleared.
+  final osm.LatLng? guideReturnPoint;
 
   /// False fades a pin: it doesn't match the chosen filters. Color never
   /// changes with filters: green has accessibility info, red has none yet.
@@ -238,6 +247,16 @@ class _OpenStreetMapViewState extends State<_OpenStreetMapView> {
   @override
   void didUpdateWidget(covariant _OpenStreetMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.guideSpot != oldWidget.guideSpot && _mapReady) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (widget.guideSpot case final spot?) {
+          _controller.move(spot.point, 18);
+        } else if (widget.guideReturnPoint case final point?) {
+          _controller.move(point, 16);
+        }
+      });
+    }
     if (widget.route != oldWidget.route && widget.route != null && _mapReady) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _fitRoute());
     }
@@ -566,6 +585,17 @@ class _OpenStreetMapViewState extends State<_OpenStreetMapView> {
                     ),
                 ],
               ),
+              if (widget.guideSpot case final spot?)
+                fm.MarkerLayer(
+                  markers: [
+                    fm.Marker(
+                      point: spot.point,
+                      width: GuideSpotMarker.size,
+                      height: GuideSpotMarker.size,
+                      child: GuideSpotMarker(icon: spot.icon),
+                    ),
+                  ],
+                ),
               fm.RichAttributionWidget(
                 attributions: [
                   fm.TextSourceAttribution('© OpenStreetMap contributors'),

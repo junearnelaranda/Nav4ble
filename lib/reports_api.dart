@@ -22,10 +22,32 @@ class SubmittedReport {
     required this.id,
     required this.aiAnalysisStatus,
     required this.detections,
+    this.firstPhotoUrl,
   });
   final String id;
   final String aiAnalysisStatus;
   final List<Map<String, dynamic>> detections;
+
+  /// The first uploaded photo, reused when adding a guide for this feature.
+  final String? firstPhotoUrl;
+
+  /// The label the AI was most confident about, if any.
+  String? get topDetection {
+    String? best;
+    var bestConfidence = double.negativeInfinity;
+    for (final detection in detections) {
+      final label =
+          detection['class'] ?? detection['label'] ?? detection['class_name'];
+      if (label is! String || label.trim().isEmpty) continue;
+      final confidence = detection['confidence'];
+      final score = confidence is num ? confidence.toDouble() : 0.0;
+      if (score > bestConfidence) {
+        best = label.trim();
+        bestConfidence = score;
+      }
+    }
+    return best;
+  }
 }
 
 class PhotoAnalysis {
@@ -197,6 +219,7 @@ class ReportsApi {
           )
         : null;
     final placeId = suggestedPlace?['location_id'] as String? ?? locationId!;
+    String? firstPhotoUrl;
     _validatePhotos(photos);
     if (analysis.photoSuggestions.length != photos.length) {
       throw const ReportsApiException(
@@ -242,6 +265,7 @@ class ReportsApi {
           'upload_status': 'Uploaded',
         });
       }
+      firstPhotoUrl = imageRows.firstOrNull?['image_url'] as String?;
       await client.from('images').insert(imageRows);
       insertedImages = true;
 
@@ -304,6 +328,7 @@ class ReportsApi {
       id: reportId,
       aiAnalysisStatus: aiStatus,
       detections: analysis.detections,
+      firstPhotoUrl: firstPhotoUrl,
     );
   }
 

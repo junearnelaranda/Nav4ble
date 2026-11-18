@@ -478,10 +478,14 @@ class _ReportSubmittedScreen extends StatelessWidget {
   const _ReportSubmittedScreen({
     required this.onBackToHome,
     required this.onViewContributions,
+    this.onAddGuide,
   });
 
   final VoidCallback onBackToHome;
   final VoidCallback onViewContributions;
+
+  /// Offered after a feature photo at a NavAble place.
+  final VoidCallback? onAddGuide;
 
   @override
   Widget build(BuildContext context) {
@@ -597,6 +601,20 @@ class _ReportSubmittedScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: NavAbleSpacing.lg),
+            if (onAddGuide case final addGuide?) ...[
+              SizedBox(
+                height: NavAbleSize.primaryButton,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    addGuide();
+                  },
+                  icon: const Icon(Icons.add_location_alt_outlined),
+                  label: const Text('Add where to find it'),
+                ),
+              ),
+              const SizedBox(height: NavAbleSpacing.xs),
+            ],
             SizedBox(
               height: NavAbleSize.primaryButton,
               child: FilledButton(

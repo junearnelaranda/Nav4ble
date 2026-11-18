@@ -7,11 +7,12 @@ abstract final class GoogleMapsLauncher {
   /// or `null` when the coordinates are missing or not a real map point.
   ///
   /// Uses the cross-platform Maps URL, so it opens the Google Maps app when
-  /// installed and the website otherwise. Starts in driving mode; the user
-  /// can switch modes in Google Maps.
+  /// installed and the website otherwise. Starts in [travelMode] (driving
+  /// unless asked otherwise); the user can switch modes in Google Maps.
   static Uri? directionsUri({
     required double? latitude,
     required double? longitude,
+    String travelMode = 'driving',
   }) {
     if (!isValidCoordinate(latitude: latitude, longitude: longitude)) {
       return null;
@@ -19,7 +20,7 @@ abstract final class GoogleMapsLauncher {
     return Uri.https('www.google.com', '/maps/dir/', {
       'api': '1',
       'destination': '$latitude,$longitude',
-      'travelmode': 'driving',
+      'travelmode': travelMode,
     });
   }
 
@@ -40,8 +41,13 @@ abstract final class GoogleMapsLauncher {
   static Future<bool> openDirections({
     required double? latitude,
     required double? longitude,
+    String travelMode = 'driving',
   }) async {
-    final uri = directionsUri(latitude: latitude, longitude: longitude);
+    final uri = directionsUri(
+      latitude: latitude,
+      longitude: longitude,
+      travelMode: travelMode,
+    );
     if (uri == null) return false;
     for (final mode in const [
       LaunchMode.externalApplication,

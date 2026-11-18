@@ -18,17 +18,20 @@ import 'accessibility_filters.dart';
 import 'locations_api.dart';
 import 'place_categories.dart';
 import 'place_search.dart';
+import 'guides_api.dart';
 import 'places_api.dart';
 import 'points/celebration_store.dart';
 import 'points/points_api.dart';
 import 'profile_stats_api.dart';
 import 'reports_api.dart';
 import 'reviews_api.dart';
+import 'screens/add_guide_screen.dart';
 import 'route_planner_api.dart';
 import 'saved_places_store.dart';
 import 'utils/initials.dart';
 import 'welcome.dart';
 import 'widgets/confetti.dart';
+import 'widgets/feature_guide_widgets.dart';
 
 part 'screens/home_tab.dart';
 part 'screens/explore_tab.dart';
@@ -100,6 +103,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // Last search's places, kept on the map as green/red pins.
   List<PlaceSearchResult> _resultPins = const [];
   PlaceSearchResult? _searchedPlace;
+  GuideSpot? _guideSpot;
+  SubmittedReport? _lastSubmittedReport;
+  bool _guideOpen = false;
   bool _placeSearching = false;
   // Suggestions while typing: debounce timer, and a counter so a slow,
   // older answer never replaces a newer one.
@@ -878,6 +884,80 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  void _setGuideSpot(GuideSpot? spot) {
+    if (mounted && spot != _guideSpot) setState(() => _guideSpot = spot);
+  }
+
+  void _setGuideOpen(bool open) {
+    if (mounted && open != _guideOpen) setState(() => _guideOpen = open);
+  }
+
+  Future<void> _goToGuideSpot(FeatureGuide guide) async {
+    final opened = await GoogleMapsLauncher.openDirections(
+      latitude: guide.latitude,
+      longitude: guide.longitude,
+      travelMode: 'walking',
+    );
+    if (!opened && mounted) _showMessage("Couldn't open Google Maps.");
+  }
+
+  /// "Add where to find it": opens the guide form for a feature at a place.
+  Future<void> _openAddGuide(
+    AccessibleLocation location, {
+    String? featureName,
+    String? featurePhotoUrl,
+    String? detectedLabel,
+  }) async {
+    if (widget.isGuest) {
+      _showMessage('Sign in to add where to find it.');
+      return;
+    }
+    final List<GuideFeature> features;
+    try {
+      features = await GuidesApi.activeFeatures();
+    } on GuidesApiException catch (error) {
+      if (mounted) _showMessage(error.message);
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AddGuideScreen(
+          locationId: location.id,
+          placeName: location.name,
+          placePoint: osm.LatLng(location.latitude, location.longitude),
+          features: features,
+          initialFeatureName:
+              featureName ??
+              (detectedLabel == null
+                  ? null
+                  : featureForDetection(detectedLabel, features)?.name),
+          initialFeaturePhotoUrl: featurePhotoUrl,
+          onSubmit: GuidesApi.submit,
+          pinPickerBuilder: (context, start, onPicked) => _OpenStreetMapView(
+            initialPosition: start,
+            selectionMode: true,
+            initialSelection: start,
+            onLocationSelected: onPicked,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// From the thank-you screen: reuses the photo and what the AI detected.
+  void _addGuideAfterReport(String locationId) {
+    for (final location in _accessibleLocations) {
+      if (location.id != locationId) continue;
+      _openAddGuide(
+        location,
+        featurePhotoUrl: _lastSubmittedReport?.firstPhotoUrl,
+        detectedLabel: _lastSubmittedReport?.topDetection,
+      );
+      return;
+    }
+  }
+
   void _saveAccessibleLocation(AccessibleLocation location) {
     if (_savedPlaces.any(
       (place) => place.locationId == location.id || place.name == location.name,
@@ -1249,6 +1329,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         analysis: analysis,
       );
       if (!mounted) return false;
+      _lastSubmittedReport = result;
       _loadMyReports();
       _loadProfileStats();
       _loadPoints();
@@ -1539,6 +1620,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           location: location,
           isGuest: widget.isGuest,
         ),
+        guideSpot: _guideSpot,
+        guideOpen: _guideOpen,
+        onGuideSpotChanged: _setGuideSpot,
+        onGuideOpenChanged: _setGuideOpen,
+        onAddGuide: (location, feature) =>
+            _openAddGuide(location, featureName: feature),
+        onGoToGuideSpot: _goToGuideSpot,
         onOpenSaved: _openSavedPlaces,
         onOpenFilters: _openAccessibilityFilters,
       ),
@@ -1551,6 +1639,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onSubmitPhoto: (location) => _startPhotoSubmission(location: location),
         onContributeGooglePlace: _contributeToGooglePlace,
         onRefresh: () => _loadAccessibleLocations(refresh: true),
+        isGuest: widget.isGuest,
+        onAddGuide: (location, feature) =>
+            _openAddGuide(location, featureName: feature),
+        onGoToGuideSpot: _goToGuideSpot,
       ),
       if (!widget.isGuest) ...[
         _ReportsPage(
@@ -1565,6 +1657,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           initialGooglePlace: _pendingGooglePlace,
           onBackToHome: () => setState(() => _selectedIndex = 0),
           onOpenContributions: _openMySubmissions,
+          onAddGuide: _addGuideAfterReport,
         ),
         _AlertsPage(
           reports: _myReports,

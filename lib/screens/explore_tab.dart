@@ -12,8 +12,14 @@ class _ExplorePage extends StatefulWidget {
     required this.onSubmitPhoto,
     required this.onContributeGooglePlace,
     required this.onRefresh,
+    required this.isGuest,
+    required this.onAddGuide,
+    required this.onGoToGuideSpot,
   });
 
+  final bool isGuest;
+  final void Function(AccessibleLocation location, String feature) onAddGuide;
+  final ValueChanged<FeatureGuide> onGoToGuideSpot;
   final TextEditingController searchController;
   final List<AccessibleLocation> locations;
   final bool locationsLoading;
@@ -483,6 +489,9 @@ class _ExplorePageState extends State<_ExplorePage> {
               distanceKm: _distanceToPlace(place),
               onNavigate: widget.onNavigate,
               onSubmitPhoto: widget.onSubmitPhoto,
+              isGuest: widget.isGuest,
+              onAddGuide: widget.onAddGuide,
+              onGoToGuideSpot: widget.onGoToGuideSpot,
             ),
             const SizedBox(height: 12),
           ],
@@ -954,9 +963,15 @@ class _ExplorePlaceCard extends StatelessWidget {
     required this.distanceKm,
     required this.onNavigate,
     required this.onSubmitPhoto,
+    required this.isGuest,
+    required this.onAddGuide,
+    required this.onGoToGuideSpot,
     this.unconfirmed = false,
   });
 
+  final bool isGuest;
+  final void Function(AccessibleLocation location, String feature) onAddGuide;
+  final ValueChanged<FeatureGuide> onGoToGuideSpot;
   final AccessibleLocation place;
   final double? distanceKm;
 
@@ -986,6 +1001,9 @@ class _ExplorePlaceCard extends StatelessWidget {
               place: place,
               onNavigate: onNavigate,
               onSubmitPhoto: onSubmitPhoto,
+              isGuest: isGuest,
+              onAddGuide: onAddGuide,
+              onGoToGuideSpot: onGoToGuideSpot,
             ),
           ),
         ),
@@ -1129,11 +1147,17 @@ class _ExplorePlaceDetails extends StatelessWidget {
     required this.place,
     required this.onNavigate,
     required this.onSubmitPhoto,
+    required this.isGuest,
+    required this.onAddGuide,
+    required this.onGoToGuideSpot,
   });
 
   final AccessibleLocation place;
   final ValueChanged<AccessibleLocation> onNavigate;
   final ValueChanged<AccessibleLocation> onSubmitPhoto;
+  final bool isGuest;
+  final void Function(AccessibleLocation location, String feature) onAddGuide;
+  final ValueChanged<FeatureGuide> onGoToGuideSpot;
 
   @override
   Widget build(BuildContext context) {
@@ -1217,6 +1241,18 @@ class _ExplorePlaceDetails extends StatelessWidget {
                         ],
                       ),
                     ),
+                  PlaceGuideList(
+                    locationId: place.id,
+                    features: place.features,
+                    isGuest: isGuest,
+                    loadGuides: GuidesApi.forLocation,
+                    onAddGuide: (feature) => onAddGuide(place, feature),
+                    onGoToSpot: onGoToGuideSpot,
+                    onDirections: () => GoogleMapsLauncher.openDirections(
+                      latitude: place.latitude,
+                      longitude: place.longitude,
+                    ),
+                  ),
                 ],
               ),
             ),
