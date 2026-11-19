@@ -252,7 +252,13 @@ class ProfilePage extends StatelessWidget {
             label: 'Offline Maps',
             onTap: () => onOpenInfo(
               'Offline Maps',
-              'Offline map downloads will become available after the map provider and local storage services are connected.',
+              "Offline maps aren't available yet.\n\n"
+                  'For now, NavAble needs an internet connection to load the '
+                  'map, search places and plan routes. The places you save '
+                  'stay on your phone, so your list is there whenever you '
+                  'open the app.\n\n'
+                  'Downloading the Cebu map for use without a connection is '
+                  'planned for a future update.',
             ),
           ),
           const Divider(indent: 52),
@@ -261,7 +267,24 @@ class ProfilePage extends StatelessWidget {
             label: 'Help & Support',
             onTap: () => onOpenInfo(
               'Help & Support',
-              'Support contact tools are ready as Flutter screens. A real support email, chat, or ticketing service can be connected later.',
+              'Need help with NavAble? Here is how to reach us.\n\n'
+                  '• Something wrong with the app? Open the Reports tab and '
+                  'tap "Found a bug in the app? Report it". Tell us what you '
+                  'were doing and what went wrong. The NavAble team reviews '
+                  'every bug report.\n\n'
+                  "• A problem at a place, like a broken ramp, a blocked "
+                  "entrance or an elevator that's out of service? Report it "
+                  'with a photo from the Reports tab. NavAble admins check it '
+                  'and update the map.\n\n'
+                  '• Questions, feedback or a request about your data? Email '
+                  'nav4ble@gmail.com.\n\n'
+                  'Tips\n'
+                  '• Turn on location so NavAble can find places and routes '
+                  'near you.\n'
+                  '• Use the filters in Explore to show places with the '
+                  'features you need.\n'
+                  '• Places can change after they are checked, so confirm '
+                  'conditions on site.',
             ),
           ),
         ],

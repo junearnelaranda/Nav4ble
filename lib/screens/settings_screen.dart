@@ -275,8 +275,26 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                     onTap: () => widget.onOpenInfo(
                       'About NavAble',
                       'NavAble helps people in Cebu find accessible places '
-                          'and routes. Accessibility information is shared by '
-                          'the community and checked by NavAble admins.',
+                          'and routes, so persons with disabilities, older '
+                          'adults, caregivers and everyday travelers can plan '
+                          'trips with confidence.\n\n'
+                          'With NavAble you can:\n'
+                          '• Search places and see their accessibility '
+                          'features, such as ramps, elevators, accessible '
+                          'restrooms and parking.\n'
+                          '• Plan routes and get directions.\n'
+                          '• Report accessibility problems and share photos '
+                          'of features you find.\n'
+                          '• Earn points and levels when your contributions '
+                          'are approved.\n\n'
+                          'Photos in reports are scanned by AI to spot '
+                          'features like ramps, and NavAble admins review '
+                          'reports and photos before they are shown to '
+                          'others. '
+                          'Information also comes from Google Maps and '
+                          'OpenStreetMap.\n\n'
+                          'Places can change, so check conditions on site.\n\n'
+                          'Website: navable.pages.dev',
                     ),
                   ),
                 ],

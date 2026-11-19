@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import 'services/auth_service.dart';
@@ -849,6 +847,7 @@ class _GoogleLogo extends StatelessWidget {
   }
 }
 
+/// Google's "G" mark, drawn from its official 48 x 48 outline.
 class _GoogleLogoPainter extends CustomPainter {
   const _GoogleLogoPainter();
 
@@ -857,31 +856,53 @@ class _GoogleLogoPainter extends CustomPainter {
   static const Color _yellow = Color(0xFFFBBC05);
   static const Color _green = Color(0xFF34A853);
 
-  double _radians(double degrees) => degrees * math.pi / 180;
-
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final strokeWidth = size.shortestSide * 0.19;
-    final radius = (size.shortestSide - strokeWidth) / 2;
+    canvas.save();
+    canvas.scale(size.width / 48, size.height / 48);
 
-    Paint segment(Color color) => Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.butt;
+    final red = Path()
+      ..moveTo(24, 9.5)
+      ..cubicTo(27.54, 9.5, 30.71, 10.72, 33.21, 13.1)
+      ..lineTo(40.06, 6.25)
+      ..cubicTo(35.9, 2.38, 30.47, 0, 24, 0)
+      ..cubicTo(14.62, 0, 6.51, 5.38, 2.56, 13.22)
+      ..lineTo(10.54, 19.41)
+      ..cubicTo(12.43, 13.72, 17.74, 9.5, 24, 9.5)
+      ..close();
+    final blue = Path()
+      ..moveTo(46.98, 24.55)
+      ..cubicTo(46.98, 22.98, 46.83, 21.46, 46.6, 20)
+      ..lineTo(24, 20)
+      ..lineTo(24, 29.02)
+      ..lineTo(36.94, 29.02)
+      ..cubicTo(36.36, 31.98, 34.68, 34.5, 32.16, 36.2)
+      ..lineTo(39.89, 42.2)
+      ..cubicTo(44.4, 38.02, 46.98, 31.84, 46.98, 24.55)
+      ..close();
+    final yellow = Path()
+      ..moveTo(10.53, 28.59)
+      ..cubicTo(10.05, 27.14, 9.77, 25.6, 9.77, 24)
+      ..cubicTo(9.77, 22.4, 10.04, 20.86, 10.53, 19.41)
+      ..lineTo(2.55, 13.22)
+      ..cubicTo(0.92, 16.46, 0, 20.12, 0, 24)
+      ..cubicTo(0, 27.88, 0.92, 31.54, 2.56, 34.78)
+      ..close();
+    final green = Path()
+      ..moveTo(24, 48)
+      ..cubicTo(30.48, 48, 35.93, 45.87, 39.89, 42.19)
+      ..lineTo(32.16, 36.19)
+      ..cubicTo(30.01, 37.64, 27.24, 38.49, 24, 38.49)
+      ..cubicTo(17.74, 38.49, 12.43, 34.27, 10.53, 28.58)
+      ..lineTo(2.55, 34.77)
+      ..cubicTo(6.51, 42.62, 14.62, 48, 24, 48)
+      ..close();
 
-    final ring = Rect.fromCircle(center: center, radius: radius);
-    canvas.drawArc(ring, _radians(-140), _radians(95), false, segment(_red));
-    canvas.drawArc(ring, _radians(140), _radians(80), false, segment(_yellow));
-    canvas.drawArc(ring, _radians(45), _radians(95), false, segment(_green));
-    canvas.drawArc(ring, _radians(-45), _radians(90), false, segment(_blue));
-
-    canvas.drawLine(
-      Offset(center.dx, center.dy),
-      Offset(size.width - strokeWidth * 0.25, center.dy),
-      segment(_blue)..strokeCap = StrokeCap.square,
-    );
+    canvas.drawPath(red, Paint()..color = _red);
+    canvas.drawPath(blue, Paint()..color = _blue);
+    canvas.drawPath(yellow, Paint()..color = _yellow);
+    canvas.drawPath(green, Paint()..color = _green);
+    canvas.restore();
   }
 
   @override
