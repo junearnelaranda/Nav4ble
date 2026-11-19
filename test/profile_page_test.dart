@@ -8,6 +8,7 @@ Future<void> pumpProfile(
   WidgetTester tester, {
   required double width,
   double textScale = 1,
+  VoidCallback? onReportPlace,
 }) async {
   tester.view.physicalSize = Size(width, 1600);
   tester.view.devicePixelRatio = 1;
@@ -34,6 +35,7 @@ Future<void> pumpProfile(
             onEditProfile: () {},
             onOpenInfo: (_, _) {},
             onSignOut: () {},
+            onReportPlace: onReportPlace ?? () {},
             pointsSection: const SizedBox(
               height: 220,
               child: Center(child: Text('POINTS SECTION')),
@@ -81,6 +83,64 @@ void main() {
   for (final width in const [640.0, 1000.0]) {
     testWidgets('no overflow at $width px with large text', (tester) async {
       await pumpProfile(tester, width: width, textScale: 1.2);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('Offline Maps is gone from the menu', (tester) async {
+    await pumpProfile(tester, width: 390);
+    expect(find.text('Offline Maps'), findsNothing);
+    expect(find.text('Help & Support'), findsOneWidget);
+  });
+
+  testWidgets('Help & Support opens a page with ways to get help', (
+    tester,
+  ) async {
+    await pumpProfile(tester, width: 390);
+    await tester.ensureVisible(find.text('Help & Support'));
+    await tester.tap(find.text('Help & Support'));
+    await tester.pumpAndSettle();
+    expect(find.text('How can we help?'), findsOneWidget);
+    expect(find.text('Report a bug in the app'), findsOneWidget);
+    expect(find.text('Report a problem at a place'), findsOneWidget);
+    expect(find.text('Email the NavAble team'), findsOneWidget);
+    expect(find.text('Common questions'), findsOneWidget);
+  });
+
+  testWidgets('Help: reporting a place problem goes to Reports', (
+    tester,
+  ) async {
+    var opened = 0;
+    await pumpProfile(tester, width: 390, onReportPlace: () => opened++);
+    await tester.ensureVisible(find.text('Help & Support'));
+    await tester.tap(find.text('Help & Support'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Report a problem at a place'));
+    await tester.pumpAndSettle();
+    expect(opened, 1);
+    expect(find.text('How can we help?'), findsNothing);
+  });
+
+  testWidgets('Help: a common question opens its answer', (tester) async {
+    await pumpProfile(tester, width: 390);
+    await tester.ensureVisible(find.text('Help & Support'));
+    await tester.tap(find.text('Help & Support'));
+    await tester.pumpAndSettle();
+    final question = find.text('Do I need an internet connection?');
+    await tester.ensureVisible(question);
+    await tester.tap(question);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('needs an internet connection'), findsOneWidget);
+  });
+
+  for (final width in const [390.0, 1440.0]) {
+    testWidgets('Help page has no overflow at $width px, large text', (
+      tester,
+    ) async {
+      await pumpProfile(tester, width: width, textScale: 1.3);
+      await tester.ensureVisible(find.text('Help & Support'));
+      await tester.tap(find.text('Help & Support'));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
   }

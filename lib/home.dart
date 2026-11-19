@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart' as osm;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthChangeEvent, AuthState, Supabase;
 
@@ -55,6 +56,7 @@ part 'screens/saved_places_screen.dart';
 part 'screens/reviews_sheet.dart';
 part 'widgets/home_widgets.dart';
 part 'screens/bug_report_screen.dart';
+part 'screens/help_screen.dart';
 part 'widgets/open_street_map_view.dart';
 
 enum _ProfilePhotoAction { camera, gallery, remove }
@@ -1714,6 +1716,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           submissions: _submissions,
           onEditProfile: _editProfile,
           onOpenInfo: _openInfoPage,
+          onReportPlace: _openReportsTab,
           onSignOut: () async {
             _signingOut = true;
             await _authService.logout();
