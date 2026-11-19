@@ -2,10 +2,11 @@ part of '../home.dart';
 
 /// Users either add an accessibility feature (with photos for AI checks)
 /// or report a problem with one. Both reach admins as reports.
-enum _ReportKind { feature, issue }
+enum ReportKind { feature, issue }
 
-class _ReportsPage extends StatefulWidget {
-  const _ReportsPage({
+class ReportsPage extends StatefulWidget {
+  const ReportsPage({
+    super.key,
     required this.reports,
     required this.locations,
     required this.initialLocation,
@@ -35,17 +36,17 @@ class _ReportsPage extends StatefulWidget {
   final VoidCallback onOpenContributions;
 
   /// Opens straight into a form; `null` shows the two choices first.
-  final _ReportKind? initialKind;
+  final ReportKind? initialKind;
 
   /// Google place from Explore that isn't a NavAble place yet; prefills the
   /// form and is linked to the suggested place.
   final GooglePlace? initialGooglePlace;
 
   @override
-  State<_ReportsPage> createState() => _ReportsPageState();
+  State<ReportsPage> createState() => _ReportsPageState();
 }
 
-class _ReportsPageState extends State<_ReportsPage> {
+class _ReportsPageState extends State<ReportsPage> {
   late final TextEditingController _locationController = TextEditingController(
     text: widget.initialLocation == null
         ? ''
@@ -55,8 +56,10 @@ class _ReportsPageState extends State<_ReportsPage> {
     text: widget.initialLocation?.name ?? '',
   );
   final TextEditingController _descriptionController = TextEditingController();
+  // Keeps the report map (and its pin) when a resize moves it in the page.
+  final _reportMapKey = GlobalKey();
   String? _category;
-  late _ReportKind? _kind = widget.initialKind;
+  late ReportKind? _kind = widget.initialKind;
   late String? _googlePlaceId = widget.initialGooglePlace?.id;
   final List<Uint8List> _selectedPhotos = [];
   PhotoAnalysis? _photoAnalysis;
@@ -86,7 +89,7 @@ class _ReportsPageState extends State<_ReportsPage> {
     'Other accessibility issue',
   ];
 
-  bool get _isIssue => _kind == _ReportKind.issue;
+  bool get _isIssue => _kind == ReportKind.issue;
   List<String> get _categories =>
       _isIssue ? _issueCategories : _featureCategories;
 
@@ -374,7 +377,91 @@ class _ReportsPageState extends State<_ReportsPage> {
       ),
   ];
 
+  /// Recent submissions in the right column of wide windows.
+  List<Widget> get _sideSubmissions => [
+    ..._submissionsList.skip(1),
+    Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: widget.onOpenContributions,
+        icon: const Icon(Icons.list_alt_rounded, size: 18),
+        label: const Text('See all submissions'),
+      ),
+    ),
+  ];
+
   Widget _buildChoices(BuildContext context) {
+    final wide = context.screenSize != ScreenSize.phone;
+    final contribute = _ReportChoiceCard(
+      icon: Icons.add_a_photo_outlined,
+      color: NavAblePalette.green,
+      title: 'Contribute Accessibility',
+      body:
+          'You captured an accessibility feature at a place: a ramp, '
+          'elevator, accessible restroom, tactile paving and more.',
+      onTap: () => setState(() => _kind = ReportKind.feature),
+    );
+    final issue = _ReportChoiceCard(
+      icon: Icons.report_problem_outlined,
+      color: const Color(0xFFF79009),
+      title: 'Report an Issue',
+      body:
+          'Something is broken, blocked or under construction: a damaged '
+          'ramp, an elevator out of service, a blocked entrance.',
+      onTap: () => setState(() => _kind = ReportKind.issue),
+    );
+    final items = <Widget>[
+      Text(
+        'What would you like to share?',
+        style: TextStyle(
+          color: context.navAblePrimaryText,
+          fontSize: 24,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.2,
+        ),
+      ),
+      const SizedBox(height: NavAbleSpacing.xs),
+      Text(
+        'Your photos and reports help keep NavAble accurate for everyone.',
+        style: TextStyle(
+          color: context.navAbleSecondaryText,
+          fontSize: 14,
+          height: 1.4,
+        ),
+      ),
+      const SizedBox(height: NavAbleSpacing.lg),
+      if (wide)
+        TwoColumns(
+          breakAt: 640,
+          gap: NavAbleSpacing.sm,
+          start: contribute,
+          end: issue,
+        )
+      else ...[
+        contribute,
+        const SizedBox(height: NavAbleSpacing.sm),
+        issue,
+      ],
+      const SizedBox(height: NavAbleSpacing.md),
+      // Problems with the app itself go to the admin Bug Reports page,
+      // not to accessibility reports about places.
+      Center(
+        child: TextButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (context) => const _BugReportScreen(),
+            ),
+          ),
+          icon: const Icon(Icons.bug_report_outlined, size: 19),
+          label: const Text('Found a bug in the app? Report it'),
+          style: TextButton.styleFrom(
+            foregroundColor: context.navAblePrimaryText,
+            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ),
+      ..._submissionsList,
+    ];
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         NavAbleSpacing.md,
@@ -382,71 +469,397 @@ class _ReportsPageState extends State<_ReportsPage> {
         NavAbleSpacing.md,
         NavAbleSpacing.xxl,
       ),
-      children: [
-        Text(
-          'What would you like to share?',
-          style: TextStyle(
-            color: context.navAblePrimaryText,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.2,
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.xs),
-        Text(
-          'Your photos and reports help keep NavAble accurate for everyone.',
-          style: TextStyle(
-            color: context.navAbleSecondaryText,
-            fontSize: 14,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.lg),
-        _ReportChoiceCard(
-          icon: Icons.add_a_photo_outlined,
-          color: NavAblePalette.green,
-          title: 'Contribute Accessibility',
-          body:
-              'You captured an accessibility feature at a place: a ramp, '
-              'elevator, accessible restroom, tactile paving and more.',
-          onTap: () => setState(() => _kind = _ReportKind.feature),
-        ),
-        const SizedBox(height: NavAbleSpacing.sm),
-        _ReportChoiceCard(
-          icon: Icons.report_problem_outlined,
-          color: const Color(0xFFF79009),
-          title: 'Report an Issue',
-          body:
-              'Something is broken, blocked or under construction: a damaged '
-              'ramp, an elevator out of service, a blocked entrance.',
-          onTap: () => setState(() => _kind = _ReportKind.issue),
-        ),
-        const SizedBox(height: NavAbleSpacing.md),
-        // Problems with the app itself go to the admin Bug Reports page,
-        // not to accessibility reports about places.
-        Center(
-          child: TextButton.icon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (context) => const _BugReportScreen(),
+      children: wide
+          ? [
+              PageWidth(
+                maxWidth: 1200,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: items,
+                ),
               ),
-            ),
-            icon: const Icon(Icons.bug_report_outlined, size: 19),
-            label: const Text('Found a bug in the app? Report it'),
-            style: TextButton.styleFrom(
-              foregroundColor: context.navAblePrimaryText,
-              textStyle: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ),
-        ..._submissionsList,
-      ],
+            ]
+          : items,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     if (_kind == null) return _buildChoices(context);
+    final wide = context.screenSize != ScreenSize.phone;
+    final header = <Widget>[
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: _isSubmitting
+              ? null
+              : () => setState(() {
+                  _kind = null;
+                  _category = null; // types differ per choice
+                }),
+          icon: const Icon(Icons.arrow_back_rounded, size: 18),
+          label: const Text('Change'),
+          style: TextButton.styleFrom(
+            foregroundColor: context.navAblePrimaryText,
+            padding: EdgeInsets.zero,
+          ),
+        ),
+      ),
+      Text(
+        _isIssue ? 'Report an Accessibility Issue' : 'Contribute Accessibility',
+        style: TextStyle(
+          color: context.navAblePrimaryText,
+          fontSize: 24,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.2,
+        ),
+      ),
+      const SizedBox(height: NavAbleSpacing.xs),
+      Text(
+        _isIssue
+            ? 'Tell others about a broken ramp, an out-of-service elevator, a '
+                  'blocked entrance or construction so they can plan ahead.'
+            : 'Share photos of ramps, elevators, accessible restrooms and '
+                  'other features. AI suggestions are reviewed by a person.',
+        style: TextStyle(
+          color: context.navAbleSecondaryText,
+          fontSize: 14,
+          height: 1.4,
+        ),
+      ),
+      const SizedBox(height: NavAbleSpacing.lg),
+    ];
+    final locationCard = _ReportFormCard(
+      icon: Icons.location_on_outlined,
+      title: 'Location',
+      child: Column(
+        children: [
+          _ReportMapPlaceholder(
+            key: _reportMapKey,
+            initialLocation: widget.initialLocation,
+            locations: widget.locations,
+            onLocationSelected: (position) {
+              setState(() {
+                _googlePlaceId = null; // a new pin is a different place
+                _locationController.text =
+                    '${position.latitude.toStringAsFixed(6)}, '
+                    '${position.longitude.toStringAsFixed(6)}';
+                _selectedLocationId = null;
+              });
+            },
+            onAccessibleLocationSelected: (location) {
+              setState(() {
+                _googlePlaceId = null;
+                _selectedLocationId = location.id;
+                _placeNameController.text = location.name;
+                _locationController.text =
+                    '${location.latitude.toStringAsFixed(6)}, '
+                    '${location.longitude.toStringAsFixed(6)}';
+              });
+            },
+          ),
+          const SizedBox(height: NavAbleSpacing.sm),
+          SizedBox(
+            height: NavAbleSize.compactControl,
+            child: TextField(
+              controller: _placeNameController,
+              onChanged: (value) {
+                if (widget.initialLocation?.name != value.trim()) {
+                  setState(() => _selectedLocationId = null);
+                }
+              },
+              style: TextStyle(fontSize: 13),
+              decoration: _reportFieldDecoration(
+                context,
+                hintText: 'Place or establishment name',
+                icon: Icons.storefront_outlined,
+              ),
+            ),
+          ),
+          const SizedBox(height: NavAbleSpacing.sm),
+          SizedBox(
+            height: NavAbleSize.compactControl,
+            child: TextField(
+              controller: _locationController,
+              onChanged: (_) => setState(() => _selectedLocationId = null),
+              style: TextStyle(fontSize: 13),
+              decoration: _reportFieldDecoration(
+                context,
+                hintText: 'Tap the map to pin the exact location',
+                icon: Icons.my_location_rounded,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    final fields = <Widget>[
+      _ReportFormCard(
+        icon: _isIssue
+            ? Icons.report_problem_outlined
+            : Icons.accessible_forward_rounded,
+        title: _isIssue ? 'Issue Type' : 'Feature Type',
+        child: SizedBox(
+          height: NavAbleSize.control,
+          child: DropdownButtonFormField<String>(
+            key: ValueKey('$_kind-$_category'),
+            initialValue: _category,
+            isExpanded: true,
+            hint: Text(
+              _isIssue ? 'Select issue type...' : 'Select feature type...',
+            ),
+            decoration: _reportFieldDecoration(
+              context,
+              hintText: _isIssue
+                  ? 'Select issue type...'
+                  : 'Select feature type...',
+            ),
+            items: [
+              for (final category in _categories)
+                DropdownMenuItem(value: category, child: Text(category)),
+            ],
+            onChanged: (value) => setState(() => _category = value),
+          ),
+        ),
+      ),
+      const SizedBox(height: NavAbleSpacing.sm),
+      _ReportFormCard(
+        icon: Icons.description_outlined,
+        title: 'Description',
+        child: TextField(
+          controller: _descriptionController,
+          minLines: 4,
+          maxLines: 5,
+          // reports.description holds 500 characters in total.
+          maxLength: 400,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: _reportFieldDecoration(
+            context,
+            hintText: _isIssue
+                ? 'Describe the problem: what is broken or blocked, and '
+                      'since when...'
+                : 'Describe the feature: where it is and how to reach it...',
+          ),
+        ),
+      ),
+      const SizedBox(height: NavAbleSpacing.sm),
+      _ReportFormCard(
+        icon: Icons.add_a_photo_outlined,
+        title: 'Add Photos',
+        child: Column(
+          children: [
+            if (_selectedPhotos.isEmpty) ...[
+              CustomPaint(
+                painter: _DashedBorderPainter(
+                  color: context.navAbleSecondaryText.withValues(alpha: 0.6),
+                  radius: NavAbleRadius.tile,
+                ),
+                child: SizedBox(
+                  height: 150,
+                  width: double.infinity,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: context.navAbleSecondaryText
+                            .withValues(alpha: 0.14),
+                        child: Icon(
+                          Icons.add_a_photo_outlined,
+                          color: context.navAblePrimaryText,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Ready for analysis',
+                        style: TextStyle(
+                          color: context.navAblePrimaryText,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Add up to $_maxPhotos photos of the feature',
+                        style: TextStyle(
+                          color: context.navAbleSecondaryText,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: NavAbleSpacing.sm),
+            ],
+            if (_selectedPhotos.isNotEmpty) ...[
+              SizedBox(
+                height: 112,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _selectedPhotos.length,
+                  separatorBuilder: (_, _) =>
+                      const SizedBox(width: NavAbleSpacing.sm),
+                  itemBuilder: (context, index) {
+                    final photo = _selectedPhotos[index];
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(NavAbleRadius.small),
+                      child: Stack(
+                        children: [
+                          Image.memory(
+                            photo,
+                            width: 112,
+                            height: 112,
+                            fit: BoxFit.cover,
+                            semanticLabel:
+                                'Accessibility report photo ${index + 1}',
+                          ),
+                          Positioned(
+                            top: 2,
+                            right: 2,
+                            child: IconButton.filledTonal(
+                              tooltip: 'Remove photo ${index + 1}',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: _isAnalyzingPhotos || _isSubmitting
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _selectedPhotos.removeAt(index);
+                                        _photoAnalysis = null;
+                                      });
+                                    },
+                              icon: Icon(Icons.close_rounded, size: 18),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: NavAbleSpacing.sm),
+            ],
+            Row(
+              children: [
+                Expanded(
+                  child: _PhotoSourceButton(
+                    icon: Icons.photo_camera_outlined,
+                    label: 'Take Photo',
+                    selected: _lastPhotoSource == ImageSource.camera,
+                    onTap:
+                        _isPickingPhoto ||
+                            _isAnalyzingPhotos ||
+                            _isSubmitting ||
+                            _selectedPhotos.length >= _maxPhotos
+                        ? null
+                        : () => _choosePhoto(ImageSource.camera),
+                  ),
+                ),
+                const SizedBox(width: NavAbleSpacing.sm),
+                Expanded(
+                  child: _PhotoSourceButton(
+                    icon: Icons.photo_library_outlined,
+                    label: 'From Gallery',
+                    selected: _lastPhotoSource == ImageSource.gallery,
+                    onTap:
+                        _isPickingPhoto ||
+                            _isAnalyzingPhotos ||
+                            _isSubmitting ||
+                            _selectedPhotos.length >= _maxPhotos
+                        ? null
+                        : () => _choosePhoto(ImageSource.gallery),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: NavAbleSpacing.sm),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed:
+                    _selectedPhotos.isEmpty ||
+                        _isPickingPhoto ||
+                        _isAnalyzingPhotos
+                    ? null
+                    : _scanPhotos,
+                icon: _isAnalyzingPhotos
+                    ? const SizedBox.square(
+                        dimension: 17,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(Icons.document_scanner_outlined),
+                label: Text(
+                  _isAnalyzingPhotos
+                      ? 'Scanning photos…'
+                      : _photoAnalysis != null
+                      ? 'Scan Again'
+                      : _isIssue
+                      ? 'Scan Photos with AI (optional)'
+                      : 'Scan Photos with AI',
+                ),
+              ),
+            ),
+            if (_isAnalyzingPhotos) ...[
+              const SizedBox(height: NavAbleSpacing.xs),
+              const LinearProgressIndicator(),
+            ],
+            if (_photoAnalysis case final analysis?) ...[
+              const SizedBox(height: NavAbleSpacing.sm),
+              _PhotoAnalysisCard(analysis: analysis),
+            ],
+            if (_isPickingPhoto) ...[
+              const SizedBox(height: NavAbleSpacing.sm),
+              const LinearProgressIndicator(),
+            ],
+          ],
+        ),
+      ),
+    ];
+    final submit = <Widget>[
+      const SizedBox(height: NavAbleSpacing.xl),
+      SizedBox(
+        width: double.infinity,
+        height: NavAbleSize.primaryButton,
+        child: FilledButton(
+          onPressed:
+              _isSubmitting ||
+                  _isAnalyzingPhotos ||
+                  (_photoAnalysis == null && !_isIssue)
+              ? null
+              : _submit,
+          child: Text(
+            _isSubmitting
+                ? 'Submitting…'
+                : _isIssue
+                ? 'Submit Issue Report'
+                : 'Submit Contribution',
+          ),
+        ),
+      ),
+      const SizedBox(height: NavAbleSpacing.sm),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.verified_user_outlined,
+            size: 14,
+            color: context.navAbleSecondaryText,
+          ),
+          SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              'Reports are verified by the community within 24 hours.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: context.navAbleSecondaryText,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ];
     return ListView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(
@@ -455,380 +868,60 @@ class _ReportsPageState extends State<_ReportsPage> {
         NavAbleSpacing.md,
         NavAbleSpacing.xxl,
       ),
-      children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: _isSubmitting
-                ? null
-                : () => setState(() {
-                    _kind = null;
-                    _category = null; // types differ per choice
-                  }),
-            icon: const Icon(Icons.arrow_back_rounded, size: 18),
-            label: const Text('Change'),
-            style: TextButton.styleFrom(
-              foregroundColor: context.navAblePrimaryText,
-              padding: EdgeInsets.zero,
-            ),
-          ),
-        ),
-        Text(
-          _isIssue
-              ? 'Report an Accessibility Issue'
-              : 'Contribute Accessibility',
-          style: TextStyle(
-            color: context.navAblePrimaryText,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.2,
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.xs),
-        Text(
-          _isIssue
-              ? 'Tell others about a broken ramp, an out-of-service elevator, a '
-                    'blocked entrance or construction so they can plan ahead.'
-              : 'Share photos of ramps, elevators, accessible restrooms and '
-                    'other features. AI suggestions are reviewed by a person.',
-          style: TextStyle(
-            color: context.navAbleSecondaryText,
-            fontSize: 14,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.lg),
-        _ReportFormCard(
-          icon: Icons.location_on_outlined,
-          title: 'Location',
-          child: Column(
-            children: [
-              _ReportMapPlaceholder(
-                initialLocation: widget.initialLocation,
-                locations: widget.locations,
-                onLocationSelected: (position) {
-                  setState(() {
-                    _googlePlaceId = null; // a new pin is a different place
-                    _locationController.text =
-                        '${position.latitude.toStringAsFixed(6)}, '
-                        '${position.longitude.toStringAsFixed(6)}';
-                    _selectedLocationId = null;
-                  });
-                },
-                onAccessibleLocationSelected: (location) {
-                  setState(() {
-                    _googlePlaceId = null;
-                    _selectedLocationId = location.id;
-                    _placeNameController.text = location.name;
-                    _locationController.text =
-                        '${location.latitude.toStringAsFixed(6)}, '
-                        '${location.longitude.toStringAsFixed(6)}';
-                  });
-                },
-              ),
-              const SizedBox(height: NavAbleSpacing.sm),
-              SizedBox(
-                height: NavAbleSize.compactControl,
-                child: TextField(
-                  controller: _placeNameController,
-                  onChanged: (value) {
-                    if (widget.initialLocation?.name != value.trim()) {
-                      setState(() => _selectedLocationId = null);
-                    }
-                  },
-                  style: TextStyle(fontSize: 13),
-                  decoration: _reportFieldDecoration(
-                    context,
-                    hintText: 'Place or establishment name',
-                    icon: Icons.storefront_outlined,
-                  ),
+      children: wide
+          // Wide windows: the form on the left; the map and recent
+          // submissions on the right.
+          ? [
+              PageWidth(
+                maxWidth: 1200,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ...header,
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Too narrow for two columns: keep the phone order,
+                        // so Location comes before the Submit button.
+                        if (constraints.maxWidth < 700) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              locationCard,
+                              const SizedBox(height: NavAbleSpacing.sm),
+                              ...fields,
+                              ...submit,
+                              ..._submissionsList,
+                            ],
+                          );
+                        }
+                        return TwoColumns(
+                          startFlex: 5,
+                          endFlex: 4,
+                          breakAt: 700,
+                          start: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [...fields, ...submit],
+                          ),
+                          end: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [locationCard, ..._sideSubmissions],
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
+            ]
+          // Phones: today's order.
+          : [
+              ...header,
+              locationCard,
               const SizedBox(height: NavAbleSpacing.sm),
-              SizedBox(
-                height: NavAbleSize.compactControl,
-                child: TextField(
-                  controller: _locationController,
-                  onChanged: (_) => setState(() => _selectedLocationId = null),
-                  style: TextStyle(fontSize: 13),
-                  decoration: _reportFieldDecoration(
-                    context,
-                    hintText: 'Tap the map to pin the exact location',
-                    icon: Icons.my_location_rounded,
-                  ),
-                ),
-              ),
+              ...fields,
+              ...submit,
+              ..._submissionsList,
             ],
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.sm),
-        _ReportFormCard(
-          icon: _isIssue
-              ? Icons.report_problem_outlined
-              : Icons.accessible_forward_rounded,
-          title: _isIssue ? 'Issue Type' : 'Feature Type',
-          child: SizedBox(
-            height: NavAbleSize.control,
-            child: DropdownButtonFormField<String>(
-              key: ValueKey('$_kind-$_category'),
-              initialValue: _category,
-              isExpanded: true,
-              hint: Text(
-                _isIssue ? 'Select issue type...' : 'Select feature type...',
-              ),
-              decoration: _reportFieldDecoration(
-                context,
-                hintText: _isIssue
-                    ? 'Select issue type...'
-                    : 'Select feature type...',
-              ),
-              items: [
-                for (final category in _categories)
-                  DropdownMenuItem(value: category, child: Text(category)),
-              ],
-              onChanged: (value) => setState(() => _category = value),
-            ),
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.sm),
-        _ReportFormCard(
-          icon: Icons.description_outlined,
-          title: 'Description',
-          child: TextField(
-            controller: _descriptionController,
-            minLines: 4,
-            maxLines: 5,
-            // reports.description holds 500 characters in total.
-            maxLength: 400,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: _reportFieldDecoration(
-              context,
-              hintText: _isIssue
-                  ? 'Describe the problem: what is broken or blocked, and '
-                        'since when...'
-                  : 'Describe the feature: where it is and how to reach it...',
-            ),
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.sm),
-        _ReportFormCard(
-          icon: Icons.add_a_photo_outlined,
-          title: 'Add Photos',
-          child: Column(
-            children: [
-              if (_selectedPhotos.isEmpty) ...[
-                CustomPaint(
-                  painter: _DashedBorderPainter(
-                    color: context.navAbleSecondaryText.withValues(alpha: 0.6),
-                    radius: NavAbleRadius.tile,
-                  ),
-                  child: SizedBox(
-                    height: 150,
-                    width: double.infinity,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircleAvatar(
-                          radius: 28,
-                          backgroundColor: context.navAbleSecondaryText
-                              .withValues(alpha: 0.14),
-                          child: Icon(
-                            Icons.add_a_photo_outlined,
-                            color: context.navAblePrimaryText,
-                            size: 26,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Ready for analysis',
-                          style: TextStyle(
-                            color: context.navAblePrimaryText,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Add up to $_maxPhotos photos of the feature',
-                          style: TextStyle(
-                            color: context.navAbleSecondaryText,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: NavAbleSpacing.sm),
-              ],
-              if (_selectedPhotos.isNotEmpty) ...[
-                SizedBox(
-                  height: 112,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _selectedPhotos.length,
-                    separatorBuilder: (_, _) =>
-                        const SizedBox(width: NavAbleSpacing.sm),
-                    itemBuilder: (context, index) {
-                      final photo = _selectedPhotos[index];
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          NavAbleRadius.small,
-                        ),
-                        child: Stack(
-                          children: [
-                            Image.memory(
-                              photo,
-                              width: 112,
-                              height: 112,
-                              fit: BoxFit.cover,
-                              semanticLabel:
-                                  'Accessibility report photo ${index + 1}',
-                            ),
-                            Positioned(
-                              top: 2,
-                              right: 2,
-                              child: IconButton.filledTonal(
-                                tooltip: 'Remove photo ${index + 1}',
-                                visualDensity: VisualDensity.compact,
-                                onPressed: _isAnalyzingPhotos || _isSubmitting
-                                    ? null
-                                    : () {
-                                        setState(() {
-                                          _selectedPhotos.removeAt(index);
-                                          _photoAnalysis = null;
-                                        });
-                                      },
-                                icon: Icon(Icons.close_rounded, size: 18),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: NavAbleSpacing.sm),
-              ],
-              Row(
-                children: [
-                  Expanded(
-                    child: _PhotoSourceButton(
-                      icon: Icons.photo_camera_outlined,
-                      label: 'Take Photo',
-                      selected: _lastPhotoSource == ImageSource.camera,
-                      onTap:
-                          _isPickingPhoto ||
-                              _isAnalyzingPhotos ||
-                              _isSubmitting ||
-                              _selectedPhotos.length >= _maxPhotos
-                          ? null
-                          : () => _choosePhoto(ImageSource.camera),
-                    ),
-                  ),
-                  const SizedBox(width: NavAbleSpacing.sm),
-                  Expanded(
-                    child: _PhotoSourceButton(
-                      icon: Icons.photo_library_outlined,
-                      label: 'From Gallery',
-                      selected: _lastPhotoSource == ImageSource.gallery,
-                      onTap:
-                          _isPickingPhoto ||
-                              _isAnalyzingPhotos ||
-                              _isSubmitting ||
-                              _selectedPhotos.length >= _maxPhotos
-                          ? null
-                          : () => _choosePhoto(ImageSource.gallery),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: NavAbleSpacing.sm),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed:
-                      _selectedPhotos.isEmpty ||
-                          _isPickingPhoto ||
-                          _isAnalyzingPhotos
-                      ? null
-                      : _scanPhotos,
-                  icon: _isAnalyzingPhotos
-                      ? const SizedBox.square(
-                          dimension: 17,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(Icons.document_scanner_outlined),
-                  label: Text(
-                    _isAnalyzingPhotos
-                        ? 'Scanning photos…'
-                        : _photoAnalysis != null
-                        ? 'Scan Again'
-                        : _isIssue
-                        ? 'Scan Photos with AI (optional)'
-                        : 'Scan Photos with AI',
-                  ),
-                ),
-              ),
-              if (_isAnalyzingPhotos) ...[
-                const SizedBox(height: NavAbleSpacing.xs),
-                const LinearProgressIndicator(),
-              ],
-              if (_photoAnalysis case final analysis?) ...[
-                const SizedBox(height: NavAbleSpacing.sm),
-                _PhotoAnalysisCard(analysis: analysis),
-              ],
-              if (_isPickingPhoto) ...[
-                const SizedBox(height: NavAbleSpacing.sm),
-                const LinearProgressIndicator(),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.xl),
-        SizedBox(
-          width: double.infinity,
-          height: NavAbleSize.primaryButton,
-          child: FilledButton(
-            onPressed:
-                _isSubmitting ||
-                    _isAnalyzingPhotos ||
-                    (_photoAnalysis == null && !_isIssue)
-                ? null
-                : _submit,
-            child: Text(
-              _isSubmitting
-                  ? 'Submitting…'
-                  : _isIssue
-                  ? 'Submit Issue Report'
-                  : 'Submit Contribution',
-            ),
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.sm),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.verified_user_outlined,
-              size: 14,
-              color: context.navAbleSecondaryText,
-            ),
-            SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                'Reports are verified by the community within 24 hours.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: context.navAbleSecondaryText,
-                  fontSize: 11,
-                ),
-              ),
-            ),
-          ],
-        ),
-        ..._submissionsList,
-      ],
     );
   }
 }
@@ -1127,6 +1220,7 @@ class _PhotoSourceButton extends StatelessWidget {
 
 class _ReportMapPlaceholder extends StatefulWidget {
   const _ReportMapPlaceholder({
+    super.key,
     required this.initialLocation,
     required this.locations,
     required this.onLocationSelected,

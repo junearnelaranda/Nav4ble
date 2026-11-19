@@ -198,6 +198,10 @@ class _LoginScreenState extends State<LoginScreen>
                                       hintText: 'user@example.com',
                                       controller: _emailController,
                                       keyboardType: TextInputType.emailAddress,
+                                      textInputAction: TextInputAction.next,
+                                      autofillHints: const [
+                                        AutofillHints.email,
+                                      ],
                                       error:
                                           _credentialsRejected ||
                                           _emailError != null,
@@ -215,6 +219,11 @@ class _LoginScreenState extends State<LoginScreen>
                                       hintText: '',
                                       controller: _passwordController,
                                       obscureText: _obscurePassword,
+                                      textInputAction: TextInputAction.done,
+                                      autofillHints: const [
+                                        AutofillHints.password,
+                                      ],
+                                      onSubmitted: (_) => _login(),
                                       error:
                                           _credentialsRejected ||
                                           _passwordError != null,
@@ -528,6 +537,9 @@ class _LoginField extends StatelessWidget {
     this.error = false,
     this.errorText,
     this.onChanged,
+    this.textInputAction,
+    this.autofillHints,
+    this.onSubmitted,
   });
 
   final String label;
@@ -541,6 +553,13 @@ class _LoginField extends StatelessWidget {
   final bool error;
   final String? errorText;
   final ValueChanged<String>? onChanged;
+
+  /// What the keyboard's Enter key does: next field, or done.
+  final TextInputAction? textInputAction;
+  final Iterable<String>? autofillHints;
+
+  /// Called when Enter is pressed in this field.
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
@@ -571,6 +590,9 @@ class _LoginField extends StatelessWidget {
             keyboardType: keyboardType,
             obscureText: obscureText,
             onChanged: onChanged,
+            textInputAction: textInputAction,
+            autofillHints: autofillHints,
+            onSubmitted: onSubmitted,
             decoration: InputDecoration(
               prefixIcon: Icon(
                 icon,

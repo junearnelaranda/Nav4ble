@@ -2,8 +2,9 @@ part of '../home.dart';
 
 /// Explore: a search shows Google places with NavAble's accessibility data
 /// on top; an empty search lists NavAble's own verified places.
-class _ExplorePage extends StatefulWidget {
-  const _ExplorePage({
+class ExplorePage extends StatefulWidget {
+  const ExplorePage({
+    super.key,
     required this.searchController,
     required this.locations,
     required this.locationsLoading,
@@ -36,7 +37,7 @@ class _ExplorePage extends StatefulWidget {
   final Future<void> Function() onRefresh;
 
   @override
-  State<_ExplorePage> createState() => _ExplorePageState();
+  State<ExplorePage> createState() => _ExplorePageState();
 }
 
 /// Filter chips and the words that count as a match for each.
@@ -92,7 +93,7 @@ List<(T, bool)> _byFilterMatch<T>(
 ({String query, List<GooglePlace> results, osm.LatLng origin})?
 _lastExploreSearch;
 
-class _ExplorePageState extends State<_ExplorePage> {
+class _ExplorePageState extends State<ExplorePage> {
   final Set<String> _selectedFilters = {};
   String _sortMode = 'Rating';
   late String _query;
@@ -317,192 +318,245 @@ class _ExplorePageState extends State<_ExplorePage> {
     List<String> sortModes,
     Map<String, AccessibleLocation> linked,
   ) {
+    // Wider windows get a heading, a grid of cards and a capped width;
+    // phones keep the single list.
+    final wide = context.screenSize != ScreenSize.phone;
+    Widget googleCard(GooglePlace place, bool confirmed) => _GooglePlaceCard(
+      place: place,
+      unconfirmed: !confirmed,
+      linked: linked[place.id],
+      distanceKm: _distanceKm(place),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (context) => _GooglePlaceDetails(
+            place: place,
+            linked: linked[place.id],
+            onContribute: () =>
+                widget.onContributeGooglePlace(place, linked[place.id]),
+          ),
+        ),
+      ),
+    );
+    Widget placeCard(AccessibleLocation place, bool confirmed) =>
+        _ExplorePlaceCard(
+          place: place,
+          unconfirmed: !confirmed,
+          distanceKm: _distanceToPlace(place),
+          onNavigate: widget.onNavigate,
+          onSubmitPhoto: widget.onSubmitPhoto,
+          isGuest: widget.isGuest,
+          onAddGuide: widget.onAddGuide,
+          onGoToGuideSpot: widget.onGoToGuideSpot,
+        );
+    final items = <Widget>[
+      if (wide) ...[
+        Text(
+          'Explore places',
+          style: TextStyle(
+            color: context.navAblePrimaryText,
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          google == null ? '$count places in Cebu City' : '$count results',
+          style: TextStyle(color: context.navAbleSecondaryText),
+        ),
+        const SizedBox(height: 16),
+      ],
+      _ExploreSearchField(
+        controller: widget.searchController,
+        searching: _searching,
+        onChanged: (value) => setState(() {
+          _query = value;
+          if (value.trim().isEmpty) {
+            _googleResults = null;
+            _searchError = null;
+            _lastExploreSearch = null;
+          }
+        }),
+        onSubmitted: _runSearch,
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: 38,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _exploreFilters.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, index) {
+            final filter = _exploreFilters[index];
+            return _AccessibilityFilterChip(
+              icon: filter.$2,
+              label: filter.$1,
+              selected: _selectedFilters.contains(filter.$1),
+              onSelected: (selected) => setState(() {
+                selected
+                    ? _selectedFilters.add(filter.$1)
+                    : _selectedFilters.remove(filter.$1);
+              }),
+            );
+          },
+        ),
+      ),
+      if (_searchError != null) ...[
+        const SizedBox(height: 10),
+        Text(
+          _searchError!,
+          style: TextStyle(color: context.navAbleSecondaryText, fontSize: 12),
+        ),
+      ],
+      const SizedBox(height: 14),
+      Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  google == null
+                      ? '$count ${count == 1 ? 'place' : 'places'}'
+                      : '$count ${count == 1 ? 'result' : 'results'} found',
+                  style: TextStyle(
+                    color: context.navAblePrimaryText,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  google != null
+                      ? 'Accessibility by NavAble'
+                      : _query.trim().isEmpty
+                      ? 'Verified NavAble places. Search to find more.'
+                      : 'Press search to find more places.',
+                  style: TextStyle(
+                    color: context.navAbleSecondaryText,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Sort places',
+            initialValue: _sortMode,
+            onSelected: (value) => setState(() => _sortMode = value),
+            itemBuilder: (context) => [
+              for (final mode in sortModes)
+                PopupMenuItem(value: mode, child: Text(mode)),
+            ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Sort by $_sortMode',
+                  style: TextStyle(
+                    color: context.navAblePrimaryText,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 19,
+                  color: context.navAblePrimaryText,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      if (googlePlaces != null) ...[
+        if (googlePlaces.isEmpty)
+          const _EmptyState(
+            icon: Icons.search_off_rounded,
+            title: 'No places match',
+            detail: 'Try another search or remove a filter.',
+          ),
+        if (wide)
+          CardGrid(
+            children: [
+              for (final (place, confirmed) in googlePlaces)
+                googleCard(place, confirmed),
+            ],
+          )
+        else
+          for (final (place, confirmed) in googlePlaces) ...[
+            googleCard(place, confirmed),
+            const SizedBox(height: 12),
+          ],
+        if (wide) const SizedBox(height: 12),
+        const _PoweredByGoogle(),
+      ] else if (widget.locationsLoading)
+        const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else if (widget.locationsError != null)
+        _EmptyState(
+          icon: Icons.cloud_off_outlined,
+          title: 'Could not load locations',
+          detail: widget.locationsError!,
+        )
+      else if (places.isEmpty)
+        _query.trim().isEmpty
+            ? const _EmptyState(
+                icon: Icons.travel_explore_rounded,
+                title: 'Search for a place',
+                detail:
+                    'Search any place by name or type, like a mall, café, '
+                    'hospital or terminal, to see its accessibility.',
+              )
+            // Typed but not searched yet: offer the full search.
+            : _EmptyState(
+                icon: Icons.travel_explore_rounded,
+                title: 'No NavAble places match yet',
+                detail: 'Search all places to see more results.',
+                actionLabel: 'Search all places for "${_query.trim()}"',
+                onAction: _searching ? null : _runSearch,
+              )
+      else ...[
+        if (wide)
+          CardGrid(
+            children: [
+              for (final (place, confirmed) in places)
+                placeCard(place, confirmed),
+            ],
+          )
+        else
+          for (final (place, confirmed) in places) ...[
+            placeCard(place, confirmed),
+            const SizedBox(height: 12),
+          ],
+        if (wide) const SizedBox(height: 12),
+        if (_query.trim().isNotEmpty)
+          OutlinedButton.icon(
+            onPressed: _searching ? null : _runSearch,
+            icon: const Icon(Icons.search_rounded),
+            label: Text('Search all places for "${_query.trim()}"'),
+          ),
+      ],
+    ];
     return ListView(
       // Scrollable even when short, so pull-to-refresh always works.
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-      children: [
-        _ExploreSearchField(
-          controller: widget.searchController,
-          searching: _searching,
-          onChanged: (value) => setState(() {
-            _query = value;
-            if (value.trim().isEmpty) {
-              _googleResults = null;
-              _searchError = null;
-              _lastExploreSearch = null;
-            }
-          }),
-          onSubmitted: _runSearch,
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 38,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _exploreFilters.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              final filter = _exploreFilters[index];
-              return _AccessibilityFilterChip(
-                icon: filter.$2,
-                label: filter.$1,
-                selected: _selectedFilters.contains(filter.$1),
-                onSelected: (selected) => setState(() {
-                  selected
-                      ? _selectedFilters.add(filter.$1)
-                      : _selectedFilters.remove(filter.$1);
-                }),
-              );
-            },
-          ),
-        ),
-        if (_searchError != null) ...[
-          const SizedBox(height: 10),
-          Text(
-            _searchError!,
-            style: TextStyle(color: context.navAbleSecondaryText, fontSize: 12),
-          ),
-        ],
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    google == null
-                        ? '$count ${count == 1 ? 'place' : 'places'}'
-                        : '$count ${count == 1 ? 'result' : 'results'} found',
-                    style: TextStyle(
-                      color: context.navAblePrimaryText,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    google != null
-                        ? 'Accessibility by NavAble'
-                        : _query.trim().isEmpty
-                        ? 'Verified NavAble places. Search to find more.'
-                        : 'Press search to find more places.',
-                    style: TextStyle(
-                      color: context.navAbleSecondaryText,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            PopupMenuButton<String>(
-              tooltip: 'Sort places',
-              initialValue: _sortMode,
-              onSelected: (value) => setState(() => _sortMode = value),
-              itemBuilder: (context) => [
-                for (final mode in sortModes)
-                  PopupMenuItem(value: mode, child: Text(mode)),
-              ],
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Sort by $_sortMode',
-                    style: TextStyle(
-                      color: context.navAblePrimaryText,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 19,
-                    color: context.navAblePrimaryText,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        if (googlePlaces != null) ...[
-          if (googlePlaces.isEmpty)
-            const _EmptyState(
-              icon: Icons.search_off_rounded,
-              title: 'No places match',
-              detail: 'Try another search or remove a filter.',
-            ),
-          for (final (place, confirmed) in googlePlaces) ...[
-            _GooglePlaceCard(
-              place: place,
-              unconfirmed: !confirmed,
-              linked: linked[place.id],
-              distanceKm: _distanceKm(place),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => _GooglePlaceDetails(
-                    place: place,
-                    linked: linked[place.id],
-                    onContribute: () =>
-                        widget.onContributeGooglePlace(place, linked[place.id]),
-                  ),
+      padding: wide
+          ? const EdgeInsets.fromLTRB(24, 20, 24, 32)
+          : const EdgeInsets.fromLTRB(12, 8, 12, 24),
+      children: wide
+          ? [
+              PageWidth(
+                maxWidth: 1200,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: items,
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          const _PoweredByGoogle(),
-        ] else if (widget.locationsLoading)
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (widget.locationsError != null)
-          _EmptyState(
-            icon: Icons.cloud_off_outlined,
-            title: 'Could not load locations',
-            detail: widget.locationsError!,
-          )
-        else if (places.isEmpty)
-          _query.trim().isEmpty
-              ? const _EmptyState(
-                  icon: Icons.travel_explore_rounded,
-                  title: 'Search for a place',
-                  detail:
-                      'Search any place by name or type, like a mall, café, '
-                      'hospital or terminal, to see its accessibility.',
-                )
-              // Typed but not searched yet: offer the full search.
-              : _EmptyState(
-                  icon: Icons.travel_explore_rounded,
-                  title: 'No NavAble places match yet',
-                  detail: 'Search all places to see more results.',
-                  actionLabel: 'Search all places for "${_query.trim()}"',
-                  onAction: _searching ? null : _runSearch,
-                )
-        else ...[
-          for (final (place, confirmed) in places) ...[
-            _ExplorePlaceCard(
-              place: place,
-              unconfirmed: !confirmed,
-              distanceKm: _distanceToPlace(place),
-              onNavigate: widget.onNavigate,
-              onSubmitPhoto: widget.onSubmitPhoto,
-              isGuest: widget.isGuest,
-              onAddGuide: widget.onAddGuide,
-              onGoToGuideSpot: widget.onGoToGuideSpot,
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (_query.trim().isNotEmpty)
-            OutlinedButton.icon(
-              onPressed: _searching ? null : _runSearch,
-              icon: const Icon(Icons.search_rounded),
-              label: Text('Search all places for "${_query.trim()}"'),
-            ),
-        ],
-      ],
+            ]
+          : items,
     );
   }
 }

@@ -15,6 +15,7 @@ import 'legal.dart';
 import 'login.dart';
 import 'navable_design.dart';
 import 'accessibility_filters.dart';
+import 'alerts_filter.dart';
 import 'locations_api.dart';
 import 'place_categories.dart';
 import 'place_search.dart';
@@ -31,7 +32,10 @@ import 'saved_places_store.dart';
 import 'utils/initials.dart';
 import 'welcome.dart';
 import 'widgets/confetti.dart';
+import 'widgets/adaptive_layout.dart';
 import 'widgets/feature_guide_widgets.dart';
+import 'widgets/navable_shell.dart';
+import 'widgets/side_menu.dart';
 
 part 'screens/home_tab.dart';
 part 'screens/explore_tab.dart';
@@ -71,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       TextEditingController();
   int _selectedIndex = 0;
   AccessibleLocation? _pendingPhotoLocation;
-  _ReportKind? _reportKind; // null: Reports tab opens on the two choices
+  ReportKind? _reportKind; // null: Reports tab opens on the two choices
   GooglePlace? _pendingGooglePlace; // Google place to contribute to
   int _photoCaptureRequestId = 0;
   AccessibleLocation? _selectedMapLocation;
@@ -84,6 +88,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _pointsLoading = true;
   bool _pointsFailed = false;
   List<AppAlert> _alerts = const [];
+  // True once the alerts shown were marked read on the server, so the
+  // unread count clears even though their green dots stay until reload.
+  bool _alertsMarkedRead = false;
   bool _celebrating = false;
   bool _profileStatsLoading = true;
   bool _locationsLoading = true;
@@ -104,6 +111,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<PlaceSearchResult> _resultPins = const [];
   PlaceSearchResult? _searchedPlace;
   GuideSpot? _guideSpot;
+  // Keeps the open page (and anything typed in it) when the window is
+  // resized between the phone and side-menu layouts.
+  final _pageKey = GlobalKey();
   SubmittedReport? _lastSubmittedReport;
   bool _guideOpen = false;
   bool _placeSearching = false;
@@ -294,7 +304,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (widget.isGuest) return;
     try {
       final alerts = await PointsApi.myAlerts();
-      if (mounted) setState(() => _alerts = alerts);
+      if (mounted) {
+        setState(() {
+          _alerts = alerts;
+          _alertsMarkedRead = false;
+        });
+      }
     } catch (_) {
       // Keep what's shown; report updates still appear.
     }
@@ -307,11 +322,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_alerts.any((alert) => !alert.isRead)) {
       try {
         await PointsApi.markAlertsRead();
+        if (mounted) setState(() => _alertsMarkedRead = true);
       } catch (_) {
         // Try again next time.
       }
     }
   }
+
+  /// Unread alerts, shown as a red number on the Alerts tab.
+  int get _unreadAlerts =>
+      _alertsMarkedRead ? 0 : _alerts.where((alert) => !alert.isRead).length;
 
   void _openMySubmissions() {
     Navigator.of(context).push(
@@ -420,7 +440,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     setState(() {
-      _reportKind = _ReportKind.feature;
+      _reportKind = ReportKind.feature;
       _pendingGooglePlace = null;
       _pendingPhotoLocation = location;
       if (location != null) _selectedMapLocation = location;
@@ -441,7 +461,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     setState(() {
-      _reportKind = _ReportKind.feature;
+      _reportKind = ReportKind.feature;
       _pendingPhotoLocation = null;
       _pendingGooglePlace = place;
       _selectedIndex = 2;
@@ -454,7 +474,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     setState(() {
-      _reportKind = _ReportKind.issue;
+      _reportKind = ReportKind.issue;
       _selectedIndex = 2;
     });
   }
@@ -956,6 +976,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
       return;
     }
+  }
+
+  /// Opens a page from the bottom bar or the side menu.
+  void _selectTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+      _reportKind = null;
+      _pendingGooglePlace = null;
+    });
+    if (index == 3) _openAlerts();
   }
 
   void _saveAccessibleLocation(AccessibleLocation location) {
@@ -1630,7 +1660,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onOpenSaved: _openSavedPlaces,
         onOpenFilters: _openAccessibilityFilters,
       ),
-      _ExplorePage(
+      ExplorePage(
         searchController: _exploreSearchController,
         locations: _accessibleLocations,
         locationsLoading: _locationsLoading,
@@ -1645,7 +1675,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onGoToGuideSpot: _goToGuideSpot,
       ),
       if (!widget.isGuest) ...[
-        _ReportsPage(
+        ReportsPage(
           reports: _myReports,
           locations: _accessibleLocations,
           initialLocation: _pendingPhotoLocation,
@@ -1659,12 +1689,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           onOpenContributions: _openMySubmissions,
           onAddGuide: _addGuideAfterReport,
         ),
-        _AlertsPage(
+        AlertsPage(
           reports: _myReports,
           alerts: _alerts,
           onOpenReports: _openMySubmissions,
         ),
-        _ProfilePage(
+        ProfilePage(
           pointsSection: _PointsSection(
             isGuest: widget.isGuest,
             loading: _pointsLoading,
@@ -1700,9 +1730,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ];
 
     final theme = Theme.of(context);
+    final photo = user?.profileImageBytes;
 
-    return Scaffold(
+    return NavAbleShell(
+      pageKey: _pageKey,
       backgroundColor: theme.scaffoldBackgroundColor,
+      sideMenu: (extended) => NavAbleSideMenu(
+        extended: extended,
+        selectedIndex: _selectedIndex,
+        onSelected: _selectTab,
+        onLeaderboard: _openLeaderboard,
+        userName: widget.isGuest ? null : user?.fullName,
+        userPhoto: photo == null ? null : MemoryImage(photo),
+        onOpenProfile: widget.isGuest ? null : () => _selectTab(4),
+        onSignIn: widget.isGuest
+            ? () => Navigator.of(context).pushReplacement(
+                MaterialPageRoute<void>(
+                  builder: (context) => const LoginScreen(),
+                ),
+              )
+            : null,
+        items: [
+          const SideMenuItem(
+            icon: Icons.home_outlined,
+            selectedIcon: Icons.home_rounded,
+            label: 'Map',
+          ),
+          const SideMenuItem(
+            icon: Icons.explore_outlined,
+            selectedIcon: Icons.explore_rounded,
+            label: 'Explore',
+          ),
+          if (!widget.isGuest) ...[
+            const SideMenuItem(
+              icon: Icons.fact_check_outlined,
+              selectedIcon: Icons.fact_check_rounded,
+              label: 'Reports',
+            ),
+            SideMenuItem(
+              icon: Icons.notifications_none_rounded,
+              selectedIcon: Icons.notifications_rounded,
+              label: 'Alerts',
+              badge: _unreadAlerts,
+            ),
+            const SideMenuItem(
+              icon: Icons.person_outline_rounded,
+              selectedIcon: Icons.person_rounded,
+              label: 'Profile',
+            ),
+          ],
+        ],
+      ),
       appBar: AppBar(
         toolbarHeight: 58,
         leading: _selectedIndex == 1
@@ -1739,17 +1817,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(width: 8),
         ],
       ),
-      body: SafeArea(child: pages[_selectedIndex]),
-      bottomNavigationBar: NavigationBar(
+      page: pages[_selectedIndex],
+      bottomBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedIndex = index;
-            _reportKind = null;
-            _pendingGooglePlace = null;
-          });
-          if (index == 3) _openAlerts();
-        },
+        onDestinationSelected: _selectTab,
         indicatorColor: theme.brightness == Brightness.dark
             ? NavAblePalette.green.withValues(alpha: 0.2)
             : kNavAbleAccent,
@@ -1770,10 +1841,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               selectedIcon: Icon(Icons.fact_check_rounded),
               label: 'Reports',
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.notifications_none_rounded),
-              selectedIcon: Icon(Icons.notifications_rounded),
+            NavigationDestination(
+              icon: Badge(
+                isLabelVisible: _unreadAlerts > 0,
+                label: Text(_unreadAlerts > 9 ? '9+' : '$_unreadAlerts'),
+                child: const Icon(Icons.notifications_none_rounded),
+              ),
+              selectedIcon: Badge(
+                isLabelVisible: _unreadAlerts > 0,
+                label: Text(_unreadAlerts > 9 ? '9+' : '$_unreadAlerts'),
+                child: const Icon(Icons.notifications_rounded),
+              ),
               label: 'Alerts',
+              tooltip: _unreadAlerts > 0
+                  ? 'Alerts, $_unreadAlerts unread'
+                  : 'Alerts',
             ),
             const NavigationDestination(
               icon: Icon(Icons.person_outline_rounded),

@@ -1,7 +1,8 @@
 part of '../home.dart';
 
-class _AlertsPage extends StatelessWidget {
-  const _AlertsPage({
+class AlertsPage extends StatefulWidget {
+  const AlertsPage({
+    super.key,
     required this.reports,
     required this.alerts,
     required this.onOpenReports,
@@ -16,7 +17,128 @@ class _AlertsPage extends StatelessWidget {
   final VoidCallback onOpenReports;
 
   @override
+  State<AlertsPage> createState() => _AlertsPageState();
+}
+
+class _AlertsPageState extends State<AlertsPage> {
+  AlertFilter _filter = AlertFilter.all;
+
+  @override
   Widget build(BuildContext context) {
+    final reports = showsReportCards(_filter)
+        ? widget.reports
+        : const <MyReport>[];
+    final alerts = [
+      for (final alert in widget.alerts)
+        if (alertMatches(_filter, alert.type)) alert,
+    ];
+    final onOpenReports = widget.onOpenReports;
+    final items = <Widget>[
+      Text(
+        'Alerts',
+        style: TextStyle(
+          color: context.navAblePrimaryText,
+          fontSize: 24,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.2,
+        ),
+      ),
+      const SizedBox(height: NavAbleSpacing.xs),
+      Text(
+        'Stay updated on your accessibility reports and community status.',
+        style: TextStyle(
+          color: context.navAbleSecondaryText,
+          fontSize: 14,
+          height: 1.4,
+        ),
+      ),
+      const SizedBox(height: NavAbleSpacing.lg),
+      Wrap(
+        spacing: NavAbleSpacing.xs,
+        runSpacing: NavAbleSpacing.xs,
+        children: [
+          for (final filter in AlertFilter.values)
+            ChoiceChip(
+              label: Text(filter.label),
+              selected: _filter == filter,
+              onSelected: (_) => setState(() => _filter = filter),
+            ),
+        ],
+      ),
+      const SizedBox(height: NavAbleSpacing.md),
+      if (widget.reports.isEmpty && widget.alerts.isEmpty)
+        _EmptyState(
+          icon: Icons.notifications_none_rounded,
+          title: 'No alerts yet',
+          detail: 'Updates about your reports will appear here.',
+        )
+      else if (reports.isEmpty && alerts.isEmpty)
+        Text(
+          'Nothing here yet.',
+          style: TextStyle(color: context.navAbleSecondaryText),
+        )
+      else
+        for (final report in reports)
+          Padding(
+            padding: const EdgeInsets.only(bottom: NavAbleSpacing.sm),
+            child: _AlertCard(
+              leading: _AlertStatusIcon(
+                icon: _reportStatusIcon(report.status),
+                foreground: context.navAblePrimaryText,
+                background: NavAblePalette.green.withValues(alpha: 0.16),
+              ),
+              title: report.status == ReportStatus.pending
+                  ? 'Awaiting administrator review'
+                  : 'Report ${report.status.label.toLowerCase()}',
+              time: _alertTime(report.createdAt),
+              body: '${report.title} · ${report.placeName}',
+              onTap: onOpenReports,
+            ),
+          ),
+      for (final alert in alerts)
+        Padding(
+          padding: const EdgeInsets.only(bottom: NavAbleSpacing.sm),
+          child: _AlertCard(
+            leading: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _AlertStatusIcon(
+                  icon: switch (alert.type) {
+                    'Points' => Icons.stars_rounded,
+                    'Level Up' => Icons.military_tech_rounded,
+                    _ => Icons.info_outline_rounded,
+                  },
+                  foreground: context.navAblePrimaryText,
+                  background: NavAblePalette.green.withValues(alpha: 0.16),
+                ),
+                if (!alert.isRead)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Semantics(
+                      label: 'New',
+                      child: Container(
+                        width: 11,
+                        height: 11,
+                        decoration: BoxDecoration(
+                          color: NavAblePalette.green,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            title: alert.title,
+            time: _alertTime(alert.createdAt),
+            body: alert.message,
+          ),
+        ),
+    ];
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         NavAbleSpacing.md,
@@ -24,94 +146,17 @@ class _AlertsPage extends StatelessWidget {
         NavAbleSpacing.md,
         NavAbleSpacing.xxl,
       ),
-      children: [
-        Text(
-          'Alerts',
-          style: TextStyle(
-            color: context.navAblePrimaryText,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.2,
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.xs),
-        Text(
-          'Stay updated on your accessibility reports and community status.',
-          style: TextStyle(
-            color: context.navAbleSecondaryText,
-            fontSize: 14,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: NavAbleSpacing.lg),
-        if (reports.isEmpty && alerts.isEmpty)
-          _EmptyState(
-            icon: Icons.notifications_none_rounded,
-            title: 'No alerts yet',
-            detail: 'Updates about your reports will appear here.',
-          )
-        else
-          for (final report in reports)
-            Padding(
-              padding: const EdgeInsets.only(bottom: NavAbleSpacing.sm),
-              child: _AlertCard(
-                leading: _AlertStatusIcon(
-                  icon: _reportStatusIcon(report.status),
-                  foreground: context.navAblePrimaryText,
-                  background: NavAblePalette.green.withValues(alpha: 0.16),
+      children: context.screenSize == ScreenSize.phone
+          ? items
+          : [
+              PageWidth(
+                maxWidth: 760,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: items,
                 ),
-                title: report.status == ReportStatus.pending
-                    ? 'Awaiting administrator review'
-                    : 'Report ${report.status.label.toLowerCase()}',
-                time: _alertTime(report.createdAt),
-                body: '${report.title} · ${report.placeName}',
-                onTap: onOpenReports,
               ),
-            ),
-        for (final alert in alerts)
-          Padding(
-            padding: const EdgeInsets.only(bottom: NavAbleSpacing.sm),
-            child: _AlertCard(
-              leading: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  _AlertStatusIcon(
-                    icon: switch (alert.type) {
-                      'Points' => Icons.stars_rounded,
-                      'Level Up' => Icons.military_tech_rounded,
-                      _ => Icons.info_outline_rounded,
-                    },
-                    foreground: context.navAblePrimaryText,
-                    background: NavAblePalette.green.withValues(alpha: 0.16),
-                  ),
-                  if (!alert.isRead)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Semantics(
-                        label: 'New',
-                        child: Container(
-                          width: 11,
-                          height: 11,
-                          decoration: BoxDecoration(
-                            color: NavAblePalette.green,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Theme.of(context).scaffoldBackgroundColor,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              title: alert.title,
-              time: _alertTime(alert.createdAt),
-              body: alert.message,
-            ),
-          ),
-      ],
+            ],
     );
   }
 }

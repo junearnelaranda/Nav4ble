@@ -1,7 +1,8 @@
 part of '../home.dart';
 
-class _ProfilePage extends StatelessWidget {
-  const _ProfilePage({
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({
+    super.key,
     required this.user,
     required this.contributionPoints,
     required this.reportCount,
@@ -89,6 +90,228 @@ class _ProfilePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final profileImage = user?.profileImageBytes;
 
+    final header = Center(
+      child: Column(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 104,
+                height: 104,
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [kNavAbleGreen, NavAblePalette.greenDark],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: CircleAvatar(
+                  backgroundColor: const Color(0xFFE8F3EC),
+                  foregroundImage: profileImage == null
+                      ? null
+                      : MemoryImage(profileImage),
+                  child: profileImage == null
+                      ? Text(
+                          _initials,
+                          style: const TextStyle(
+                            color: NavAblePalette.navy,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+              Positioned(
+                right: 1,
+                bottom: 3,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: NavAblePalette.greenDark,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                  ),
+                  child: Icon(
+                    Icons.verified_rounded,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: NavAbleSpacing.sm),
+          Text(
+            _displayName,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: context.navAblePrimaryText,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.2,
+            ),
+          ),
+          if (user?.email.isNotEmpty ?? false) ...[
+            const SizedBox(height: NavAbleSpacing.xxs),
+            Text(
+              user!.email,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: context.navAbleSecondaryText,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+    final stats = Row(
+      children: [
+        Expanded(
+          child: _ProfileStatCard(
+            icon: Icons.assignment_turned_in_outlined,
+            value: reportCount,
+            loading: statsLoading,
+            label: 'Reports Submitted',
+            foreground: NavAblePalette.greenDark,
+            background: const Color(0xFFDDF9E3),
+          ),
+        ),
+        const SizedBox(width: NavAbleSpacing.sm),
+        Expanded(
+          child: _ProfileStatCard(
+            icon: Icons.bookmark_border_rounded,
+            value: savedPlaceCount,
+            loading: statsLoading,
+            label: 'Saved Places',
+            foreground: NavAblePalette.navy,
+            background: const Color(0xFFDDEEFF),
+          ),
+        ),
+      ],
+    );
+    final editButton = Tooltip(
+      message: 'Edit profile',
+      child: SizedBox(
+        height: NavAbleSize.primaryButton,
+        child: FilledButton.icon(
+          onPressed: onEditProfile,
+          icon: Icon(Icons.edit_outlined, size: 19),
+          label: Text('Edit Profile'),
+        ),
+      ),
+    );
+    final logOutButton = SizedBox(
+      height: NavAbleSize.control,
+      child: OutlinedButton.icon(
+        onPressed: () => _confirmSignOut(context),
+        style: ButtonStyle(
+          foregroundColor: const WidgetStatePropertyAll(Color(0xFFB42318)),
+          backgroundColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.pressed)) {
+              return const Color(0xFFFECDCA);
+            }
+            if (states.contains(WidgetState.hovered)) {
+              return const Color(0xFFFEE4E2);
+            }
+            return NavAblePalette.surface;
+          }),
+          side: const WidgetStatePropertyAll(
+            BorderSide(color: Color(0xFFB42318), width: 1.3),
+          ),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(NavAbleRadius.button),
+            ),
+          ),
+          animationDuration: const Duration(milliseconds: 160),
+        ),
+        icon: Icon(Icons.logout_rounded, size: 19),
+        label: Text('Log Out', style: TextStyle(fontWeight: FontWeight.w800)),
+      ),
+    );
+    final settings = NavAbleSurface(
+      width: double.infinity,
+      padding: EdgeInsets.zero,
+      borderRadius: NavAbleRadius.control,
+      child: Column(
+        children: [
+          _ProfileMenuTile(
+            icon: Icons.accessibility_new_rounded,
+            label: 'Accessibility Settings',
+            onTap: () => _openAccessibilitySettings(context),
+          ),
+          const Divider(indent: 52),
+          _ProfileMenuTile(
+            icon: Icons.map_outlined,
+            label: 'Offline Maps',
+            onTap: () => onOpenInfo(
+              'Offline Maps',
+              'Offline map downloads will become available after the map provider and local storage services are connected.',
+            ),
+          ),
+          const Divider(indent: 52),
+          _ProfileMenuTile(
+            icon: Icons.help_outline_rounded,
+            label: 'Help & Support',
+            onTap: () => onOpenInfo(
+              'Help & Support',
+              'Support contact tools are ready as Flutter screens. A real support email, chat, or ticketing service can be connected later.',
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (context.screenSize != ScreenSize.phone) {
+      // Wide windows: the profile card on the left; points, settings and
+      // logging out on the right.
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+        children: [
+          PageWidth(
+            maxWidth: 1100,
+            child: TwoColumns(
+              startWidth: 320,
+              gap: NavAbleSpacing.lg,
+              breakAt: 700,
+              start: NavAbleSurface(
+                key: const ValueKey('profile-card'),
+                width: double.infinity,
+                padding: const EdgeInsets.all(NavAbleSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    header,
+                    const SizedBox(height: NavAbleSpacing.lg),
+                    stats,
+                    const SizedBox(height: NavAbleSpacing.lg),
+                    editButton,
+                  ],
+                ),
+              ),
+              end: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  pointsSection,
+                  const SizedBox(height: NavAbleSpacing.lg),
+                  settings,
+                  const SizedBox(height: NavAbleSpacing.lg),
+                  logOutButton,
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Phones: today's order.
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         NavAbleSpacing.md,
@@ -97,192 +320,17 @@ class _ProfilePage extends StatelessWidget {
         NavAbleSpacing.xxl,
       ),
       children: [
-        Center(
-          child: Column(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: 104,
-                    height: 104,
-                    padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [kNavAbleGreen, NavAblePalette.greenDark],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                    ),
-                    child: CircleAvatar(
-                      backgroundColor: const Color(0xFFE8F3EC),
-                      foregroundImage: profileImage == null
-                          ? null
-                          : MemoryImage(profileImage),
-                      child: profileImage == null
-                          ? Text(
-                              _initials,
-                              style: const TextStyle(
-                                color: NavAblePalette.navy,
-                                fontSize: 30,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            )
-                          : null,
-                    ),
-                  ),
-                  Positioned(
-                    right: 1,
-                    bottom: 3,
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: NavAblePalette.greenDark,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
-                      ),
-                      child: Icon(
-                        Icons.verified_rounded,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: NavAbleSpacing.sm),
-              Text(
-                _displayName,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: context.navAblePrimaryText,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              if (user?.email.isNotEmpty ?? false) ...[
-                const SizedBox(height: NavAbleSpacing.xxs),
-                Text(
-                  user!.email,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: context.navAbleSecondaryText,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+        header,
         const SizedBox(height: NavAbleSpacing.xl),
         pointsSection,
         const SizedBox(height: NavAbleSpacing.sm),
-        Row(
-          children: [
-            Expanded(
-              child: _ProfileStatCard(
-                icon: Icons.assignment_turned_in_outlined,
-                value: reportCount,
-                loading: statsLoading,
-                label: 'Reports Submitted',
-                foreground: NavAblePalette.greenDark,
-                background: const Color(0xFFDDF9E3),
-              ),
-            ),
-            const SizedBox(width: NavAbleSpacing.sm),
-            Expanded(
-              child: _ProfileStatCard(
-                icon: Icons.bookmark_border_rounded,
-                value: savedPlaceCount,
-                loading: statsLoading,
-                label: 'Saved Places',
-                foreground: NavAblePalette.navy,
-                background: const Color(0xFFDDEEFF),
-              ),
-            ),
-          ],
-        ),
+        stats,
         const SizedBox(height: NavAbleSpacing.lg),
-        Tooltip(
-          message: 'Edit profile',
-          child: SizedBox(
-            height: NavAbleSize.primaryButton,
-            child: FilledButton.icon(
-              onPressed: onEditProfile,
-              icon: Icon(Icons.edit_outlined, size: 19),
-              label: Text('Edit Profile'),
-            ),
-          ),
-        ),
+        editButton,
         const SizedBox(height: NavAbleSpacing.sm),
-        SizedBox(
-          height: NavAbleSize.control,
-          child: OutlinedButton.icon(
-            onPressed: () => _confirmSignOut(context),
-            style: ButtonStyle(
-              foregroundColor: const WidgetStatePropertyAll(Color(0xFFB42318)),
-              backgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.pressed)) {
-                  return const Color(0xFFFECDCA);
-                }
-                if (states.contains(WidgetState.hovered)) {
-                  return const Color(0xFFFEE4E2);
-                }
-                return NavAblePalette.surface;
-              }),
-              side: const WidgetStatePropertyAll(
-                BorderSide(color: Color(0xFFB42318), width: 1.3),
-              ),
-              shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(NavAbleRadius.button),
-                ),
-              ),
-              animationDuration: const Duration(milliseconds: 160),
-            ),
-            icon: Icon(Icons.logout_rounded, size: 19),
-            label: Text(
-              'Log Out',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-          ),
-        ),
+        logOutButton,
         const SizedBox(height: NavAbleSpacing.xl),
-        NavAbleSurface(
-          width: double.infinity,
-          padding: EdgeInsets.zero,
-          borderRadius: NavAbleRadius.control,
-          child: Column(
-            children: [
-              _ProfileMenuTile(
-                icon: Icons.accessibility_new_rounded,
-                label: 'Accessibility Settings',
-                onTap: () => _openAccessibilitySettings(context),
-              ),
-              const Divider(indent: 52),
-              _ProfileMenuTile(
-                icon: Icons.map_outlined,
-                label: 'Offline Maps',
-                onTap: () => onOpenInfo(
-                  'Offline Maps',
-                  'Offline map downloads will become available after the map provider and local storage services are connected.',
-                ),
-              ),
-              const Divider(indent: 52),
-              _ProfileMenuTile(
-                icon: Icons.help_outline_rounded,
-                label: 'Help & Support',
-                onTap: () => onOpenInfo(
-                  'Help & Support',
-                  'Support contact tools are ready as Flutter screens. A real support email, chat, or ticketing service can be connected later.',
-                ),
-              ),
-            ],
-          ),
-        ),
+        settings,
       ],
     );
   }
