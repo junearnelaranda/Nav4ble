@@ -263,36 +263,35 @@ class _FeatureIconRowState extends State<_FeatureIconRow>
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    // Wraps onto a second line, so no icon is ever cut off at the edge.
+    return Padding(
       padding: const EdgeInsets.fromLTRB(2, _lift + 2, 2, 8),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8 + _lift,
         children: [
           for (final (index, feature) in widget.features.indexed)
-            Padding(
-              padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
-              child: AnimatedBuilder(
-                animation: _float,
-                builder: (context, child) => Transform.translate(
-                  offset: Offset(
-                    0,
-                    _float.isAnimating
-                        ? -_lift *
-                              (0.5 +
-                                  0.5 *
-                                      math.sin(
-                                        2 * math.pi * _float.value + index,
-                                      ))
-                        : 0,
-                  ),
-                  child: child,
+            AnimatedBuilder(
+              animation: _float,
+              builder: (context, child) => Transform.translate(
+                offset: Offset(
+                  0,
+                  _float.isAnimating
+                      ? -_lift *
+                            (0.5 +
+                                0.5 *
+                                    math.sin(
+                                      2 * math.pi * _float.value + index,
+                                    ))
+                      : 0,
                 ),
-                child: _FeatureIcon(
-                  feature: feature,
-                  hasGuide: widget.hasGuide(feature),
-                  selected: widget.selected == feature,
-                  onTap: () => widget.onTap(feature),
-                ),
+                child: child,
+              ),
+              child: _FeatureIcon(
+                feature: feature,
+                hasGuide: widget.hasGuide(feature),
+                selected: widget.selected == feature,
+                onTap: () => widget.onTap(feature),
               ),
             ),
         ],

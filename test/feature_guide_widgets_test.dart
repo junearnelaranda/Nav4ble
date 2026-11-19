@@ -356,6 +356,38 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final width in const [320.0, 390.0]) {
+    testWidgets('all eight icons show in full at $width px wide', (
+      tester,
+    ) async {
+      const features = [
+        'Accessible entrance',
+        'Accessible parking',
+        'Accessible restroom',
+        'Braille signage',
+        'Elevator',
+        'Tactile paving',
+        'Wheelchair ramp',
+        'Wheelchair seating',
+      ];
+      tester.view.physicalSize = Size(width, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        app(
+          Harness().panel(features: features, load: returns(const [])),
+          size: Size(width, 844),
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final feature in features) {
+        final rect = tester.getRect(icon(feature));
+        expect(rect.left, greaterThanOrEqualTo(0), reason: feature);
+        expect(rect.right, lessThanOrEqualTo(width), reason: feature);
+      }
+    });
+  }
+
   testWidgets('screen readers can activate a feature icon', (tester) async {
     final semantics = tester.ensureSemantics();
     await tester.pumpWidget(app(Harness().panel(load: returns([guide()]))));
