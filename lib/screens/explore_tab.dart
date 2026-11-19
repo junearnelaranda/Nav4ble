@@ -16,11 +16,15 @@ class ExplorePage extends StatefulWidget {
     required this.isGuest,
     required this.onAddGuide,
     required this.onGoToGuideSpot,
+    this.loadGuides = GuidesApi.forLocation,
   });
 
   final bool isGuest;
   final void Function(AccessibleLocation location, String feature) onAddGuide;
   final ValueChanged<FeatureGuide> onGoToGuideSpot;
+
+  /// Loads a place's approved route guides for Place Details.
+  final Future<List<FeatureGuide>> Function(String locationId) loadGuides;
   final TextEditingController searchController;
   final List<AccessibleLocation> locations;
   final bool locationsLoading;
@@ -50,7 +54,6 @@ const _exploreFilters = <(String, IconData, List<String>)>[
   ('Elevator', Icons.elevator_outlined, ['elevator', 'lift']),
   ('Accessible Restroom', Icons.wc_rounded, ['restroom', 'toilet']),
   ('Ramp', Icons.accessible_forward_rounded, ['ramp']),
-  ('Braille', Icons.grid_on_rounded, ['braille', 'tactile']),
   // Google Maps also reports these two.
   ('Accessible Parking', Icons.local_parking_rounded, ['parking']),
   ('Wheelchair Seating', Icons.event_seat_outlined, ['seating']),
@@ -58,7 +61,7 @@ const _exploreFilters = <(String, IconData, List<String>)>[
 
 /// How a place fares against the selected chips: yes, no or unknown per
 /// chip (see [filterMatch]). Only an explicit "no" hides a place; Google, for
-/// example, never reports elevators, ramps or braille.
+/// example, never reports elevators or ramps.
 FilterMatch _exploreMatch(
   Iterable<String> has,
   Iterable<String> lacks,
@@ -347,6 +350,7 @@ class _ExplorePageState extends State<ExplorePage> {
           isGuest: widget.isGuest,
           onAddGuide: widget.onAddGuide,
           onGoToGuideSpot: widget.onGoToGuideSpot,
+          loadGuides: widget.loadGuides,
         );
     final items = <Widget>[
       if (wide) ...[
@@ -1020,12 +1024,14 @@ class _ExplorePlaceCard extends StatelessWidget {
     required this.isGuest,
     required this.onAddGuide,
     required this.onGoToGuideSpot,
+    required this.loadGuides,
     this.unconfirmed = false,
   });
 
   final bool isGuest;
   final void Function(AccessibleLocation location, String feature) onAddGuide;
   final ValueChanged<FeatureGuide> onGoToGuideSpot;
+  final Future<List<FeatureGuide>> Function(String locationId) loadGuides;
   final AccessibleLocation place;
   final double? distanceKm;
 
@@ -1058,6 +1064,7 @@ class _ExplorePlaceCard extends StatelessWidget {
               isGuest: isGuest,
               onAddGuide: onAddGuide,
               onGoToGuideSpot: onGoToGuideSpot,
+              loadGuides: loadGuides,
             ),
           ),
         ),
@@ -1066,7 +1073,13 @@ class _ExplorePlaceCard extends StatelessWidget {
           children: [
             AspectRatio(
               aspectRatio: 16 / 8,
-              child: _CoverPhoto(url: place.photoUrl, name: place.name),
+              // Swipe (or use the arrows) to see every photo; a tap elsewhere
+              // still opens Place Details.
+              child: PlacePhotoCarousel(
+                photos: place.gallery,
+                placeName: place.name,
+                placeholder: _PhotoPlaceholder(),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
@@ -1155,29 +1168,7 @@ String? _readableAddress(String address) {
   return coordinates.hasMatch(text) ? null : text;
 }
 
-/// A NavAble cover photo, or the same placeholder the Google cards use.
-class _CoverPhoto extends StatelessWidget {
-  const _CoverPhoto({required this.url, required this.name});
-
-  final String? url;
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    final placeholder = _PhotoPlaceholder();
-    final link = url;
-    if (link == null) return placeholder;
-    return Image.network(
-      link,
-      fit: BoxFit.cover,
-      semanticLabel: 'Photo of $name',
-      errorBuilder: (_, _, _) => placeholder,
-      loadingBuilder: (context, child, progress) =>
-          progress == null ? child : placeholder,
-    );
-  }
-}
-
+/// Shown while a place photo loads, or when a place has none.
 class _PhotoPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -1204,6 +1195,7 @@ class _ExplorePlaceDetails extends StatelessWidget {
     required this.isGuest,
     required this.onAddGuide,
     required this.onGoToGuideSpot,
+    required this.loadGuides,
   });
 
   final AccessibleLocation place;
@@ -1212,129 +1204,215 @@ class _ExplorePlaceDetails extends StatelessWidget {
   final bool isGuest;
   final void Function(AccessibleLocation location, String feature) onAddGuide;
   final ValueChanged<FeatureGuide> onGoToGuideSpot;
+  final Future<List<FeatureGuide>> Function(String locationId) loadGuides;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Place Details')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(NavAbleSpacing.md),
-          children: [
-            NavAbleSurface(
-              width: double.infinity,
-              padding: const EdgeInsets.all(NavAbleSpacing.cardInset),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final gallery = place.gallery;
+    final photos = ClipRRect(
+      borderRadius: BorderRadius.circular(NavAbleRadius.tile),
+      child: AspectRatio(
+        aspectRatio: 4 / 3,
+        child: PlacePhotoCarousel(
+          photos: gallery,
+          placeName: place.name,
+          placeholder: _PhotoPlaceholder(),
+          onOpen: (index) => showPlacePhotoViewer(
+            context,
+            photos: gallery,
+            initialIndex: index,
+            placeName: place.name,
+          ),
+        ),
+      ),
+    );
+    final info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          place.name,
+          style: TextStyle(
+            color: context.navAblePrimaryText,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        if (place.category.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            place.category,
+            style: TextStyle(
+              color: context.navAblePrimaryText,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+        if (_readableAddress(place.address) case final address?) ...[
+          const SizedBox(height: 4),
+          Text(address, style: TextStyle(color: context.navAbleSecondaryText)),
+        ],
+        const SizedBox(height: 8),
+        Text(
+          '${place.latitude.toStringAsFixed(6)}, ${place.longitude.toStringAsFixed(6)}',
+          style: TextStyle(color: context.navAbleSecondaryText, fontSize: 12),
+        ),
+      ],
+    );
+    final buttons = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: NavAbleSize.primaryButton,
+          child: FilledButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              onSubmitPhoto(place);
+            },
+            icon: Icon(Icons.add_a_photo_outlined),
+            label: Text('Submit Accessibility Photos'),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: NavAbleSize.primaryButton,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              onNavigate(place);
+            },
+            icon: Icon(Icons.navigation_rounded),
+            label: Text('Navigate'),
+          ),
+        ),
+      ],
+    );
+    // Its own Material, so the guide rows show their tap ripples on the card.
+    final accessibility = Material(
+      type: MaterialType.transparency,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Accessibility',
+            style: TextStyle(
+              color: context.navAblePrimaryText,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (place.features.isEmpty)
+            Text('No accessibility features have been added yet.'),
+          for (final feature in place.features)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(NavAbleRadius.tile),
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: _CoverPhoto(url: place.photoUrl, name: place.name),
-                    ),
+                  Icon(
+                    Icons.check_circle_rounded,
+                    color: kNavAbleGreen,
+                    size: 21,
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    place.name,
-                    style: TextStyle(
-                      color: context.navAblePrimaryText,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  if (place.category.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      place.category,
-                      style: TextStyle(
-                        color: context.navAblePrimaryText,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                  if (_readableAddress(place.address) case final address?) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      address,
-                      style: TextStyle(color: context.navAbleSecondaryText),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  Text(
-                    '${place.latitude.toStringAsFixed(6)}, ${place.longitude.toStringAsFixed(6)}',
-                    style: TextStyle(
-                      color: context.navAbleSecondaryText,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  Text(
-                    'Accessibility',
-                    style: TextStyle(
-                      color: context.navAblePrimaryText,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (place.features.isEmpty)
-                    Text('No accessibility features have been added yet.'),
-                  for (final feature in place.features)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle_rounded,
-                            color: kNavAbleGreen,
-                            size: 21,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(child: Text(feature)),
-                        ],
-                      ),
-                    ),
-                  PlaceGuideList(
-                    locationId: place.id,
-                    features: place.features,
-                    isGuest: isGuest,
-                    loadGuides: GuidesApi.forLocation,
-                    onAddGuide: (feature) => onAddGuide(place, feature),
-                    onGoToSpot: onGoToGuideSpot,
-                    onDirections: () => GoogleMapsLauncher.openDirections(
-                      latitude: place.latitude,
-                      longitude: place.longitude,
-                    ),
-                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(feature)),
                 ],
               ),
             ),
-            const SizedBox(height: 18),
-            SizedBox(
-              height: NavAbleSize.primaryButton,
-              child: FilledButton.icon(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  onSubmitPhoto(place);
-                },
-                icon: Icon(Icons.add_a_photo_outlined),
-                label: Text('Submit Accessibility Photos'),
-              ),
+          PlaceGuideList(
+            locationId: place.id,
+            features: place.features,
+            isGuest: isGuest,
+            loadGuides: loadGuides,
+            onAddGuide: (feature) => onAddGuide(place, feature),
+            onGoToSpot: onGoToGuideSpot,
+            onDirections: () => GoogleMapsLauncher.openDirections(
+              latitude: place.latitude,
+              longitude: place.longitude,
             ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: NavAbleSize.primaryButton,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  onNavigate(place);
-                },
-                icon: Icon(Icons.navigation_rounded),
-                label: Text('Navigate'),
-              ),
-            ),
-          ],
+          ),
+        ],
+      ),
+    );
+
+    return Scaffold(
+      appBar: AppBar(title: Text('Place Details')),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Wide windows: photos on the left, the place and its buttons on
+            // the right, accessibility below. Phones: one column as before.
+            final wide = constraints.maxWidth >= 860;
+            return ListView(
+              padding: EdgeInsets.all(wide ? 24 : NavAbleSpacing.md),
+              children: [
+                PageWidth(
+                  maxWidth: wide ? 1100 : 640,
+                  child: wide
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            NavAbleSurface(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(
+                                NavAbleSpacing.cardInset,
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(flex: 11, child: photos),
+                                  const SizedBox(width: 28),
+                                  Expanded(
+                                    flex: 9,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        info,
+                                        const SizedBox(height: 24),
+                                        buttons,
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: NavAbleSpacing.md),
+                            NavAbleSurface(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(
+                                NavAbleSpacing.cardInset,
+                              ),
+                              child: accessibility,
+                            ),
+                          ],
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            NavAbleSurface(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(
+                                NavAbleSpacing.cardInset,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  photos,
+                                  const SizedBox(height: 16),
+                                  info,
+                                  const SizedBox(height: 22),
+                                  accessibility,
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            buttons,
+                          ],
+                        ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

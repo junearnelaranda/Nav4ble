@@ -52,7 +52,7 @@ void main() {
         const ['Braille signage'],
         const [AccessibilityFilterWords.tactile],
       ),
-      isTrue,
+      isFalse, // NavAble doesn't track braille signs.
     );
   });
 

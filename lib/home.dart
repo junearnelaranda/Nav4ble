@@ -36,6 +36,7 @@ import 'widgets/confetti.dart';
 import 'widgets/adaptive_layout.dart';
 import 'widgets/feature_guide_widgets.dart';
 import 'widgets/navable_shell.dart';
+import 'widgets/place_photo_carousel.dart';
 import 'widgets/side_menu.dart';
 
 part 'screens/home_tab.dart';

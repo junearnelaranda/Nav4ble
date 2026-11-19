@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:navable/home.dart';
 import 'package:navable/locations_api.dart';
 import 'package:navable/navable_design.dart';
+import 'package:navable/widgets/place_photo_carousel.dart';
 
 final places = [
   for (var i = 0; i < 7; i++)
@@ -15,6 +16,16 @@ final places = [
       features: const ['Elevator', 'Accessible parking'],
       rating: 5 - i / 10,
       category: 'Shopping mall',
+      photos: i == 0
+          ? const [
+              PlacePhoto(url: 'https://example.com/a.jpg'),
+              PlacePhoto(
+                url: 'https://example.com/b.jpg',
+                contributor: 'June A.',
+              ),
+              PlacePhoto(url: 'https://example.com/c.jpg'),
+            ]
+          : const [],
     ),
 ];
 
@@ -49,6 +60,7 @@ Future<void> pumpExplore(
             isGuest: true,
             onAddGuide: (_, _) {},
             onGoToGuideSpot: (_) {},
+            loadGuides: (_) async => const [],
           ),
         ),
       ),
@@ -90,6 +102,53 @@ void main() {
   for (final width in const [640.0, 1000.0]) {
     testWidgets('no overflow at $width px with large text', (tester) async {
       await pumpExplore(tester, width: width, textScale: 1.2);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('there is no Braille filter', (tester) async {
+    await pumpExplore(tester, width: 1440);
+    expect(find.text('Elevator'), findsWidgets);
+    expect(find.text('Braille'), findsNothing);
+  });
+
+  testWidgets('a card swipes through its photos', (tester) async {
+    await pumpExplore(tester, width: 1440);
+    expect(find.text('1 / 3'), findsOneWidget);
+    await tester.tap(find.byTooltip('Next photo').first);
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+    expect(find.text('Photo by June A.'), findsOneWidget);
+  });
+
+  Future<void> openDetails(WidgetTester tester, double width) async {
+    await pumpExplore(tester, width: width);
+    await tester.tap(find.text('Place 0').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Place Details'), findsOneWidget);
+  }
+
+  testWidgets('PC place details puts the photos beside the details', (
+    tester,
+  ) async {
+    await openDetails(tester, 1440);
+    final photo = tester.getRect(find.byType(PlacePhotoCarousel));
+    final name = tester.getRect(find.text('Place 0').last);
+    expect(photo.width, lessThan(720));
+    expect(photo.height, lessThan(480));
+    expect(name.left, greaterThan(photo.right));
+  });
+
+  testWidgets('phone place details keeps the photos on top', (tester) async {
+    await openDetails(tester, 390);
+    final photo = tester.getRect(find.byType(PlacePhotoCarousel));
+    final name = tester.getRect(find.text('Place 0').last);
+    expect(name.top, greaterThan(photo.bottom));
+  });
+
+  for (final width in const [390.0, 800.0, 1440.0]) {
+    testWidgets('place details has no overflow at $width px', (tester) async {
+      await openDetails(tester, width);
       expect(tester.takeException(), isNull);
     });
   }

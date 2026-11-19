@@ -10,6 +10,25 @@ class LocationsApiException implements Exception {
   String toString() => message;
 }
 
+/// One photo in a place's gallery.
+class PlacePhoto {
+  const PlacePhoto({required this.url, this.contributor});
+
+  final String url;
+
+  /// Short name of the user who took it ("June A."); null for admin photos.
+  final String? contributor;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlacePhoto &&
+      other.url == url &&
+      other.contributor == contributor;
+
+  @override
+  int get hashCode => Object.hash(url, contributor);
+}
+
 class AccessibleLocation {
   const AccessibleLocation({
     required this.id,
@@ -20,9 +39,10 @@ class AccessibleLocation {
     required this.features,
     this.rating,
     this.googlePlaceId,
-    this.photoUrl,
+    String? photoUrl,
+    this.photos = const [],
     this.category = '',
-  });
+  }) : _coverUrl = photoUrl;
 
   final String id;
   final String name;
@@ -38,8 +58,18 @@ class AccessibleLocation {
   /// Google place this NavAble place describes, if linked.
   final String? googlePlaceId;
 
-  /// Cover photo an admin uploaded for this place, if any.
-  final String? photoUrl;
+  final String? _coverUrl;
+
+  /// Admin photos first, then verified photos from users.
+  final List<PlacePhoto> photos;
+
+  /// Cover photo: the first gallery photo, if any.
+  String? get photoUrl => photos.isEmpty ? _coverUrl : photos.first.url;
+
+  /// Every photo to show for this place.
+  List<PlacePhoto> get gallery => photos.isNotEmpty
+      ? photos
+      : [if (_coverUrl case final url?) PlacePhoto(url: url)];
 }
 
 class LocationsApi {
@@ -103,7 +133,7 @@ class LocationsApi {
       }
     }
 
-    final covers = await _coverPhotos();
+    final galleries = await _placePhotos();
     final result = <AccessibleLocation>[];
     for (final document in locations) {
       final status =
@@ -174,7 +204,7 @@ class LocationsApi {
               _number(document['average_rating']) ??
               _number(document['averageRating']),
           googlePlaceId: _text(document['google_place_id']),
-          photoUrl: covers[id.toString()],
+          photos: galleries[id.toString()] ?? const [],
         ),
       );
     }
@@ -281,10 +311,35 @@ class LocationsApi {
   static String? _referenceId(Object? value) =>
       value?.toString().split('/').last;
 
-  /// First admin photo per place (oldest first, like the admin page's
-  /// "Cover"). The database only shows other people's photos when an admin
-  /// uploaded them for a verified place; the user's own report photos are
-  /// skipped so they don't become a cover for them.
+  /// Every verified place's photos: admin photos first (oldest first, like
+  /// the admin page's "Cover"), then verified photos from users.
+  static Future<Map<String, List<PlacePhoto>>> _placePhotos() async {
+    try {
+      final rows = await Supabase.instance.client.rpc('get_place_photos');
+      final galleries = <String, List<PlacePhoto>>{};
+      for (final row in rows as List) {
+        final url = _text(row['image_url']);
+        final location = row['location_id']?.toString();
+        if (url == null || location == null) continue;
+        if (!url.startsWith('https://')) continue;
+        galleries
+            .putIfAbsent(location, () => [])
+            .add(PlacePhoto(url: url, contributor: _text(row['contributor'])));
+      }
+      return galleries;
+    } on Exception {
+      // Older database without the gallery: fall back to one cover each.
+      final covers = await _coverPhotos();
+      return {
+        for (final MapEntry(:key, :value) in covers.entries)
+          key: [PlacePhoto(url: value)],
+      };
+    }
+  }
+
+  /// First admin photo per place. The database only shows other people's
+  /// photos when an admin uploaded them for a verified place; the user's own
+  /// report photos are skipped so they don't become a cover for them.
   static Future<Map<String, String>> _coverPhotos() async {
     try {
       final client = Supabase.instance.client;

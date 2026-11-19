@@ -184,7 +184,8 @@ void main() {
         'Accessible parking',
       );
       expect(featureForDetection('seat', all)?.name, 'Wheelchair seating');
-      expect(featureForDetection('braille', all)?.name, 'Braille signage');
+      // NavAble doesn't track braille signs.
+      expect(featureForDetection('braille', all), isNull);
     });
 
     test('returns null when nothing fits', () {

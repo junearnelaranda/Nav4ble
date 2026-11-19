@@ -145,7 +145,6 @@ GuideFeature? featureForDetection(
     (words: ['tactile'], feature: 'tactile'),
     (words: ['parking'], feature: 'parking'),
     (words: ['seat'], feature: 'seat'),
-    (words: ['braille'], feature: 'braille'),
   ];
   final label = detected.toLowerCase();
   for (final group in groups) {

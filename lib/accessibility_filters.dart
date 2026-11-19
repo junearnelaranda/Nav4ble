@@ -7,7 +7,7 @@ abstract final class AccessibilityFilterWords {
   static const elevators = ['elevator', 'lift'];
   static const entrance = ['entrance', 'step-free'];
   static const toilet = ['toilet', 'restroom'];
-  static const tactile = ['tactile', 'braille'];
+  static const tactile = ['tactile'];
   // Google Maps also reports these two.
   static const parking = ['parking'];
   static const seating = ['seating'];
