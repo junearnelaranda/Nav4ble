@@ -6,7 +6,7 @@
 // Results are suggestions only; admins verify them in the admin app.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { runWorkflow, WorkflowError } from "./workflow.ts";
+import { runWorkflow, WorkflowError, workflowInputs } from "./workflow.ts";
 
 const maxBodyBytes = 1024 * 1024;
 const maxImageBase64Chars = 960_000; // about 700 KiB of image data
@@ -97,9 +97,7 @@ Deno.serve(async (req) => {
 
   try {
     // Only the validated image is forwarded, never other client fields.
-    const workflowBody = JSON.stringify({
-      inputs: { image: { type: "base64", value: imageBase64 } },
-    });
+    const workflowBody = JSON.stringify({ inputs: workflowInputs(imageBase64) });
     return json(200, await runWorkflow(workflowBody, apiKey));
   } catch (cause) {
     const code = cause instanceof WorkflowError ? cause.code : "WORKFLOW_FAILED";

@@ -1,11 +1,61 @@
 // Calls NavAble's Roboflow workflow. Ported from worker/src/workflow.js.
 
 const WORKSPACE_NAME = "nav-able";
-const WORKFLOW_ID =
-  "navable-accessibility-detection-vnavable-accessibility-detection-2-rfdetr-small-t1-logic";
-const WORKFLOW_ENDPOINT =
+// The base workflow takes the model and a confidence floor as inputs. (The
+// "...-logic" wrapper only passed the image, so the base workflow's 40%
+// default dropped most real detections: this model rarely scores higher.)
+const WORKFLOW_ID = "navable-accessibility-detection";
+export const WORKFLOW_ENDPOINT =
   `https://serverless.roboflow.com/${WORKSPACE_NAME}/workflows/${WORKFLOW_ID}`;
+const MODEL_ID = "nav-able/navable-accessibility-detection-2-rfdetr-small-t1";
 const OUTPUT_NAME = "predictions";
+
+// Roboflow returns everything above this; filterDetections then applies
+// each feature's own cutoff.
+const CONFIDENCE_FLOOR = 0.2;
+
+// Per-feature cutoffs from the model's evaluation (optimal thresholds:
+// ramp 0.33, elevator 0.39, restroom and tactile 0.24), set slightly toward
+// suggesting more, since an administrator verifies every result. Elevator
+// stays strict: the model mistakes ramps for elevators at about 27%.
+const CLASS_CUTOFFS: Record<string, number> = {
+  ramp: 0.3,
+  elevator: 0.39,
+  accessible_restroom: 0.3,
+  tactile: 0.3,
+  accessible_entrance: 0.3,
+};
+const DEFAULT_CUTOFF = 0.4;
+
+export function workflowInputs(imageBase64: string) {
+  return {
+    image: { type: "base64", value: imageBase64 },
+    model_id: MODEL_ID,
+    confidence: CONFIDENCE_FLOOR,
+  };
+}
+
+// Keeps detections at or above their feature's cutoff, one per feature
+// (the most confident), best first.
+export function filterDetections(
+  detections: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const best = new Map<string, Record<string, unknown>>();
+  for (const detection of detections) {
+    const label = detection.class;
+    const confidence = detection.confidence;
+    if (typeof label !== "string" || !label) continue;
+    if (typeof confidence !== "number" || !Number.isFinite(confidence)) continue;
+    if (confidence < (CLASS_CUTOFFS[label] ?? DEFAULT_CUTOFF)) continue;
+    const current = best.get(label);
+    if (!current || confidence > (current.confidence as number)) {
+      best.set(label, detection);
+    }
+  }
+  return [...best.values()].sort((a, b) =>
+    (b.confidence as number) - (a.confidence as number)
+  );
+}
 
 export class WorkflowError extends Error {
   code: string;
@@ -86,13 +136,14 @@ export function parseWorkflowResponse(responseBody: unknown): WorkflowResult {
       height: Number.isFinite(output.image.height) ? output.image.height : null,
     }
     : { width: null, height: null };
-  const detections = output.predictions
-    .slice(0, 20)
+  // The floor is low, so look at more raw guesses before filtering.
+  const raw = output.predictions
+    .slice(0, 300)
     .map((item: unknown) => sanitize(item))
     .filter((item: unknown) =>
       item && typeof item === "object" && !Array.isArray(item)
     ) as Record<string, unknown>[];
-  return { image, detections };
+  return { image, detections: filterDetections(raw) };
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
